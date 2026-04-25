@@ -46,3 +46,13 @@ codegen/
 
 # Octave session info
 octave-workspace
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/

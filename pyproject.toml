@@ -1,0 +1,16 @@
+[project]
+name = "easyspin_py"
+version = "0.1.0"
+description = "A Python port of the EasySpin EPR simulation library"
+authors = [
+    { name = "Author", email = "author@example.com" }
+]
+dependencies = [
+    "numpy",
+    "scipy",
+]
+requires-python = ">=3.9"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
