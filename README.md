@@ -1,9 +1,15 @@
 # eprsim
-EPR Simulator App v.3.3
+EPR Simulator App v.4.0.0 (Pure Python)
 
 ## Description:
 
-An educational app for the EPR spectral simulations. The purpose of this app is to get user familiar with the EPR spectra calculations using [EasySpin](https://easyspin.org) package. All the basic routines are borrowed from the latest [EasySpin](https://easyspin.org) release.
+An educational app for the EPR spectral simulations. The purpose of this app is to get user familiar with the EPR spectra calculations using [EasySpin](https://easyspin.org) package. All the basic routines are inspired by the [EasySpin](https://easyspin.org) package, but refactored to pure python and organized as REST API server. Future plans are to develop a web interface for the app. The app is using numpy and scipy for numerical calculations.
+The Docker file is included for easy deployment. To run the app, use the command:
+
+```bash
+
+docker-compose up
+```
 
 ## Features:
 
@@ -20,7 +26,3 @@ An educational app for the EPR spectral simulations. The purpose of this app is 
 * Loading of 1-dimentional EPR spectra (pulse and CW, but only .DSC files) is supported
 
 * Saving parameters as a matlab structure is supported
-
-## Requirements:
-
-* MatLab Runtime libraries version R2023b (23.2)

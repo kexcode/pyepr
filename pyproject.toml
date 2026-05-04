@@ -1,9 +1,9 @@
 [project]
-name = "easyspin_py"
+name = "pyEPR"
 version = "0.1.0"
 description = "A Python port of the EasySpin EPR simulation library"
 authors = [
-    { name = "Author", email = "author@example.com" }
+    { name = "Leonid Rapatskiy", email = "rapatskiy@spincademy.com" }
 ]
 dependencies = [
     "numpy",
