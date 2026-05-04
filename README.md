@@ -1,5 +1,5 @@
-# eprsim
-EPR Simulator App v.4.0.0 (Pure Python)
+# pyepr
+pyepr v.0.1.0 (Pure Python)
 
 ## Description:
 

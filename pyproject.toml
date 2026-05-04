@@ -1,5 +1,5 @@
 [project]
-name = "pyEPR"
+name = "pyepr"
 version = "0.1.0"
 description = "A Python port of the EasySpin EPR simulation library"
 authors = [
