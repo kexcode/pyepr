@@ -43,6 +43,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await refreshSystem();
   bindInputListeners();
   initMobileTutorial();
+  initExamples();
 
   // First-run tour
   if (!localStorage.getItem('epr_tour_done')) {
@@ -95,7 +96,7 @@ function switchMobileTab(btn) {
   document.querySelectorAll('.bottom-nav-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   const targetId = btn.dataset.mobileTab;
-  ['mobile-params','mobile-spectrum','mobile-levels','mobile-tutorial'].forEach(id => {
+  ['mobile-params','mobile-spectrum','mobile-levels','mobile-tutorial','mobile-examples'].forEach(id => {
     document.getElementById(id).classList.toggle('active', id === targetId);
   });
   // Trigger Plotly resize when switching to plot tabs
@@ -112,6 +113,10 @@ function switchMobileTab(btn) {
 function initMobileTutorial() {
   const src = document.getElementById('pane-tutorial').innerHTML;
   document.getElementById('mobile-tutorial').innerHTML = src;
+  
+  const examplesSrc = document.getElementById('pane-examples').innerHTML;
+  document.getElementById('mobile-examples').innerHTML = examplesSrc;
+
   // Also clone the panel cards to mobile-params
   const paramsContent = document.getElementById('pane-params').innerHTML;
   document.getElementById('mobile-params').innerHTML = paramsContent;
@@ -479,3 +484,130 @@ function showToast(message, type = 'info') {
   document.body.appendChild(t);
   setTimeout(() => t.remove(), 3500);
 }
+
+// ============================================================
+// Presets
+// ============================================================
+
+const PRESETS = [
+  {
+    name: 'Free electron', icon: 'bolt',
+    params: { S: 0.5, g: [2.0023, 2.0023, 2.0023], D: [], nuclei: [], lw: [0.3, 0.0], simulator: "garlic", exp: { mwFreq: 9.4, Bmin: 330, Bmax: 340, nPoints: 501 } }
+  },
+  {
+    name: '1 Proton', icon: 'filter_1',
+    params: { S: 0.5, g: [2.0029, 2.0029, 2.0029], D: [], nuclei: [{ isotope: "1H", A: 1430, Q: 0 }], lw: [1, 0.0], simulator: "garlic", exp: { mwFreq: 9.4, Bmin: 200, Bmax: 450, nPoints: 5001 } }
+  },
+  {
+    name: '2 Protons', icon: 'filter_2',
+    params: { S: 0.5, g: [2.0029, 2.0029, 2.0029], D: [], nuclei: [{ isotope: "1H", A: 1430, Q: 0 }, { isotope: "1H", A: 1430, Q: 0 }], lw: [1, 0.0], simulator: "garlic", exp: { mwFreq: 9.4, Bmin: 200, Bmax: 450, nPoints: 5001 } }
+  },
+  {
+    name: 'Nitroxide radical', icon: 'bubble_chart',
+    params: { S: 0.5, g: [2.0083, 2.0061, 2.0022], D: [], nuclei: [{ isotope: "14N", A: 0, A_aniso: [11.2, 11.2, 92.4], Q: 0 }], lw: [0.5, 0.0], simulator: "pepper", exp: { mwFreq: 9.4, Bmin: 328, Bmax: 342, nPoints: 501 } }
+  },
+  {
+    name: 'Methyl radical', icon: 'blur_on',
+    params: {
+      S: 0.5, g: [2.0026, 2.0026, 2.0026], D: [],
+      nuclei: [{ isotope: "1H", A: -70, Q: 0 }, { isotope: "1H", A: -70, Q: 0 }, { isotope: "1H", A: -70, Q: 0 }, { isotope: "13C", A: 105, Q: 0 }],
+      lw: [0.2, 0.0], simulator: "garlic", exp: { mwFreq: 9.4, Bmin: 325, Bmax: 345, nPoints: 501 }
+    }
+  },
+  {
+    name: 'Spin triplet', icon: 'grain',
+    params: { S: 1.0, g: [2.0000, 2.0000, 2.0000], D: [4496.88, 749.48], nuclei: [], lw: [10, 0.0], simulator: "pepper", exp: { mwFreq: 9.4, Bmin: 0, Bmax: 600, nPoints: 2501 } }
+  },
+  {
+    name: 'Triplet nitrene', icon: 'scatter_plot',
+    params: { S: 1.0, g: [2.0033, 2.0033, 2.0033], D: [41041.59, 2788.07], nuclei: [], lw: [30, 0.0], simulator: "pepper", exp: { mwFreq: 94.0, Bmin: 0, Bmax: 6000, nPoints: 5001 } }
+  },
+  {
+    name: 'Triplet carbene', icon: 'toll',
+    params: { S: 1.0, g: [2.0033, 2.0033, 2.0033], D: [12258.51, 2788.07], nuclei: [], lw: [10, 0.0], simulator: "pepper", exp: { mwFreq: 9.4, Bmin: 0, Bmax: 1400, nPoints: 5001 } }
+  },
+  {
+    name: 'Mn(III) ion', icon: 'lens',
+    params: { S: 2.0, g: [2.0000, 2.0000, 2.0000], D: [-119317.40, 0], nuclei: [], lw: [80, 0.0], simulator: "pepper", exp: { mwFreq: 240.0, Bmin: 0, Bmax: 12000, nPoints: 2501 } }
+  },
+  {
+    name: 'Fe(III) ion', icon: 'brightness_1',
+    params: { S: 2.5, g: [2.0000, 2.0000, 2.0000], D: [149896.23, 0], nuclei: [], lw: [20, 0.0], simulator: "pepper", exp: { mwFreq: 9.4, Bmin: 0, Bmax: 400, nPoints: 2501 } }
+  }
+];
+
+function initExamples() {
+  const grid = document.getElementById('examples-grid');
+  if (!grid) return;
+  grid.innerHTML = '';
+  PRESETS.forEach((preset, idx) => {
+    const btn = document.createElement('button');
+    btn.style.cssText = `
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-md);
+      padding: 16px 8px; cursor: pointer; transition: var(--transition);
+      color: var(--text); gap: 8px;
+    `;
+    btn.onmouseover = () => { btn.style.borderColor = 'var(--primary)'; btn.style.background = 'rgba(0,188,212,0.05)'; };
+    btn.onmouseout = () => { btn.style.borderColor = 'var(--border)'; btn.style.background = 'var(--surface2)'; };
+    btn.innerHTML = `
+      <span class="material-icons-round" style="font-size: 32px; color: var(--accent); opacity: 0.8;">${preset.icon}</span>
+      <span style="font-size: 0.78rem; font-weight: 500; text-align: center;">${preset.name}</span>
+    `;
+    btn.onclick = async () => {
+      showToast('Loading preset: ' + preset.name);
+      await loadPreset(idx);
+    };
+    grid.appendChild(btn);
+  });
+}
+
+async function loadPreset(idx) {
+  const p = PRESETS[idx];
+  
+  if(document.getElementById('f-S')) document.getElementById('f-S').value = p.params.S;
+  if(document.getElementById('f-gx')) document.getElementById('f-gx').value = p.params.g[0].toFixed(4);
+  if(document.getElementById('f-gy')) document.getElementById('f-gy').value = p.params.g[1].toFixed(4);
+  if(document.getElementById('f-gz')) document.getElementById('f-gz').value = (p.params.g[2] || p.params.g[0]).toFixed(4);
+  if(document.getElementById('f-D')) document.getElementById('f-D').value = (p.params.D[0] || 0).toFixed(2);
+  if(document.getElementById('f-E')) document.getElementById('f-E').value = (p.params.D[1] || 0).toFixed(2);
+  if(document.getElementById('f-lG')) document.getElementById('f-lG').value = (p.params.lw[0] || 0).toFixed(2);
+  if(document.getElementById('f-lL')) document.getElementById('f-lL').value = (p.params.lw[1] || 0).toFixed(2);
+  
+  if(document.getElementById('f-mwFreq')) document.getElementById('f-mwFreq').value = p.params.exp.mwFreq;
+  if(document.getElementById('f-Bmin')) document.getElementById('f-Bmin').value = p.params.exp.Bmin;
+  if(document.getElementById('f-Bmax')) document.getElementById('f-Bmax').value = p.params.exp.Bmax;
+  if(document.getElementById('f-nPoints')) document.getElementById('f-nPoints').value = p.params.exp.nPoints;
+
+  setSimulator(p.params.simulator);
+
+  try {
+    await PUT('/api/system', {
+      S: p.params.S,
+      g: p.params.g,
+      D: p.params.D,
+      lw: p.params.lw,
+      tcorr: null
+    });
+    
+    await DELETE('/api/system/nuclei');
+    
+    for (const n of p.params.nuclei) {
+      await POST('/api/system/nuclei', {
+        symbol: n.isotope,
+        A: n.A,
+        A_aniso: n.A_aniso || null,
+        Q: n.Q || 0,
+        label: null
+      });
+    }
+    
+    await refreshSystem();
+    const tabParams = document.getElementById('tab-params');
+    if (tabParams) tabParams.click();
+    showToast(p.name + ' loaded successfully!', 'success');
+  } catch (e) {
+    showToast('Failed to load preset: ' + e.message, 'error');
+  }
+}
+

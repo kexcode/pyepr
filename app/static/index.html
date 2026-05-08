@@ -8,7 +8,7 @@
   <title>EPR Simulator</title>
   <link rel="manifest" href="/static/manifest.json"/>
   <link rel="apple-touch-icon" href="/static/icons/icon-192.png"/>
-  <link rel="stylesheet" href="/static/style.css"/>
+  <link rel="stylesheet" href="/static/style.css?v=2"/>
   <!-- Plotly.js -->
   <script src="https://cdn.plot.ly/plotly-2.32.0.min.js" defer></script>
   <!-- Shepherd.js tour -->
@@ -34,6 +34,10 @@
         <span class="material-icons-round">science</span>
         Experiment
       </button>
+      <button class="panel-tab" data-tab="examples" id="tab-examples">
+        <span class="material-icons-round">category</span>
+        Examples
+      </button>
       <button class="panel-tab" data-tab="tutorial" id="tab-tutorial">
         <span class="material-icons-round">help_outline</span>
         Guide
@@ -42,6 +46,16 @@
 
     <!-- Scrollable content -->
     <div id="panel-scroll">
+
+      <!-- === EXAMPLES TAB === -->
+      <div id="pane-examples" class="tab-pane" style="display: none;">
+        <div style="padding: 12px;">
+          <h2 style="font-size: 1rem; color: var(--text); margin-bottom: 12px;">Load Preset</h2>
+          <div id="examples-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+            <!-- Tiles will be populated by JS -->
+          </div>
+        </div>
+      </div>
 
       <!-- === PARAMS TAB === -->
       <div id="pane-params" class="tab-pane">
@@ -423,6 +437,7 @@
       </div>
     </div>
     <div id="mobile-tutorial"><!-- content cloned from pane-tutorial --></div>
+    <div id="mobile-examples"><!-- content cloned from pane-examples --></div>
 
     <!-- Bottom navigation (mobile) -->
     <nav id="bottom-nav">
@@ -434,6 +449,9 @@
       </button>
       <button class="bottom-nav-btn" data-mobile-tab="mobile-levels" onclick="switchMobileTab(this)">
         <span class="material-icons-round">stacked_line_chart</span>Levels
+      </button>
+      <button class="bottom-nav-btn" data-mobile-tab="mobile-examples" onclick="switchMobileTab(this)">
+        <span class="material-icons-round">category</span>Presets
       </button>
       <button class="bottom-nav-btn" data-mobile-tab="mobile-tutorial" onclick="switchMobileTab(this)">
         <span class="material-icons-round">help_outline</span>Guide
@@ -449,7 +467,7 @@
   <span class="material-icons-round">play_arrow</span>
 </button>
 
-<script src="/static/app.js" defer></script>
+<script src="/static/app.js?v=2" defer></script>
 <script src="/static/tour.js" defer></script>
 </body>
 </html>

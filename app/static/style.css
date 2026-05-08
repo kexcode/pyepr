@@ -460,7 +460,7 @@ select option { background: var(--surface2); }
 #plot-area {
   flex: 1;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   overflow: hidden;
   padding: 12px;
   gap: 12px;
@@ -570,15 +570,24 @@ select option { background: var(--surface2); }
 #mobile-fab:hover { transform: scale(1.08); }
 
 /* Mobile views */
-#mobile-params, #mobile-spectrum, #mobile-levels, #mobile-tutorial {
+#mobile-params, #mobile-spectrum, #mobile-levels, #mobile-tutorial, #mobile-examples {
   display: none;
   flex: 1;
   overflow-y: auto;
   padding: 12px;
 }
-#mobile-params.active, #mobile-spectrum.active,
-#mobile-levels.active, #mobile-tutorial.active {
-  display: block;
+
+@media (max-width: 767px) {
+  #mobile-params.active, #mobile-spectrum.active,
+  #mobile-levels.active, #mobile-tutorial.active, #mobile-examples.active {
+    display: block;
+  }
+}
+
+@media (min-width: 768px) {
+  #mobile-params, #mobile-spectrum, #mobile-levels, #mobile-tutorial, #mobile-examples {
+    display: none !important;
+  }
 }
 
 /* ================================================================
