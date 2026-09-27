@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+  <meta name="theme-color" content="#0F1117"/>
+  <meta name="description" content="EPR Simulator — powered by EasySpin physics engine ported to Python"/>
+  <title>EPR Simulator</title>
+  <link rel="manifest" href="/static/manifest.json"/>
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.png"/>
+  <link rel="stylesheet" href="/static/style.css?v=2"/>
+  <!-- Plotly.js -->
+  <script src="https://cdn.plot.ly/plotly-2.32.0.min.js" defer></script>
+  <!-- Shepherd.js tour -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/shepherd.js@11/dist/css/shepherd.css"/>
+  <script src="https://cdn.jsdelivr.net/npm/shepherd.js@11/dist/js/shepherd.min.js" defer></script>
+</head>
+<body>
+
+<div id="app-shell">
+
+  <!-- ================================================================
+       SIDE PANEL (desktop)
+  ================================================================ -->
+  <aside id="side-panel">
+
+    <!-- Desktop tab nav -->
+    <nav id="panel-tabs">
+      <button class="panel-tab active" data-tab="params" id="tab-params">
+        <span class="material-icons-round">tune</span>
+        Parameters
+      </button>
+      <button class="panel-tab" data-tab="exp" id="tab-exp">
+        <span class="material-icons-round">science</span>
+        Experiment
+      </button>
+      <button class="panel-tab" data-tab="examples" id="tab-examples">
+        <span class="material-icons-round">category</span>
+        Examples
+      </button>
+      <button class="panel-tab" data-tab="tutorial" id="tab-tutorial">
+        <span class="material-icons-round">help_outline</span>
+        Guide
+      </button>
+    </nav>
+
+    <!-- Scrollable content -->
+    <div id="panel-scroll">
+
+      <!-- === EXAMPLES TAB === -->
+      <div id="pane-examples" class="tab-pane" style="display: none;">
+        <div style="padding: 12px;">
+          <h2 style="font-size: 1rem; color: var(--text); margin-bottom: 12px;">Load Preset</h2>
+          <div id="examples-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+            <!-- Tiles will be populated by JS -->
+          </div>
+        </div>
+      </div>
+
+      <!-- === PARAMS TAB === -->
+      <div id="pane-params" class="tab-pane">
+
+        <!-- Electron Spin card -->
+        <div class="param-card" id="card-electron">
+          <div class="card-header" onclick="toggleCard('card-electron')">
+            <div class="card-icon"><span class="material-icons-round">bolt</span></div>
+            <div style="flex:1">
+              <div class="card-title">Electron Spin</div>
+              <div class="card-subtitle" id="electron-summary">S = 0.5 · g = 2.0060</div>
+            </div>
+            <span class="material-icons-round card-chevron">expand_more</span>
+          </div>
+          <div class="card-body">
+            <div class="field-group">
+              <label class="field-label" for="f-S">Electron Spin S</label>
+              <select id="f-S">
+                <option value="0.5" selected>1/2 (doublet)</option>
+                <option value="1.0">1 (triplet)</option>
+                <option value="1.5">3/2</option>
+                <option value="2.0">2</option>
+                <option value="2.5">5/2</option>
+              </select>
+            </div>
+            <div class="field-group">
+              <label class="field-label" data-tip="Principal g-values: gx, gy, gz">g-Tensor (gx, gy, gz)</label>
+              <div class="field-row">
+                <div class="field-group">
+                  <input type="number" id="f-gx" value="2.0060" step="0.0001" min="0"/>
+                  <div class="nucleus-field-label">gx</div>
+                </div>
+                <div class="field-group">
+                  <input type="number" id="f-gy" value="2.0050" step="0.0001" min="0"/>
+                  <div class="nucleus-field-label">gy</div>
+                </div>
+                <div class="field-group">
+                  <input type="number" id="f-gz" value="2.0023" step="0.0001" min="0"/>
+                  <div class="nucleus-field-label">gz</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ZFS card -->
+        <div class="param-card collapsed" id="card-zfs">
+          <div class="card-header" onclick="toggleCard('card-zfs')">
+            <div class="card-icon" style="background: linear-gradient(135deg, #7B1FA2, #3D5AFE)">
+              <span class="material-icons-round">grain</span>
+            </div>
+            <div style="flex:1">
+              <div class="card-title">Zero-Field Splitting</div>
+              <div class="card-subtitle" id="zfs-summary">D = 0 MHz · E = 0 MHz</div>
+            </div>
+            <span class="material-icons-round card-chevron">expand_more</span>
+          </div>
+          <div class="card-body">
+            <div class="field-row">
+              <div class="field-group">
+                <label class="field-label" data-tip="Axial ZFS parameter in MHz">D (MHz)</label>
+                <input type="number" id="f-D" value="0" step="10"/>
+              </div>
+              <div class="field-group">
+                <label class="field-label" data-tip="Rhombic ZFS parameter in MHz">E (MHz)</label>
+                <input type="number" id="f-E" value="0" step="1"/>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Linewidth card -->
+        <div class="param-card" id="card-lw">
+          <div class="card-header" onclick="toggleCard('card-lw')">
+            <div class="card-icon" style="background: linear-gradient(135deg, #00695C, #00BCD4)">
+              <span class="material-icons-round">show_chart</span>
+            </div>
+            <div style="flex:1">
+              <div class="card-title">Linewidth</div>
+              <div class="card-subtitle" id="lw-summary">lG = 0.30 mT</div>
+            </div>
+            <span class="material-icons-round card-chevron">expand_more</span>
+          </div>
+          <div class="card-body">
+            <div class="field-row">
+              <div class="field-group">
+                <label class="field-label" data-tip="Gaussian FWHM in mT">Gaussian lG (mT)</label>
+                <input type="number" id="f-lG" value="0.3" step="0.05" min="0"/>
+              </div>
+              <div class="field-group">
+                <label class="field-label" data-tip="Lorentzian FWHM in mT">Lorentzian lL (mT)</label>
+                <input type="number" id="f-lL" value="0.0" step="0.05" min="0"/>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Nuclei card -->
+        <div class="param-card" id="card-nuclei">
+          <div class="card-header" onclick="toggleCard('card-nuclei')">
+            <div class="card-icon" style="background: linear-gradient(135deg, #E65100, #FFB300)">
+              <span class="material-icons-round">blur_on</span>
+            </div>
+            <div style="flex:1">
+              <div class="card-title">Nuclei</div>
+              <div class="card-subtitle" id="nuclei-summary">0 nuclei · dim = 2</div>
+            </div>
+            <span class="material-icons-round card-chevron">expand_more</span>
+          </div>
+          <div class="card-body">
+            <div id="nuclei-list"></div>
+            <div style="display:flex;gap:8px;align-items:center;margin-top:4px;">
+              <select id="nucleus-symbol-select" style="flex:1; font-size:0.82rem;">
+                <option value="1H">¹H</option>
+                <option value="2H">²H (D)</option>
+                <option value="14N" selected>¹⁴N</option>
+                <option value="15N">¹⁵N</option>
+                <option value="13C">¹³C</option>
+                <option value="19F">¹⁹F</option>
+                <option value="31P">³¹P</option>
+                <option value="63Cu">⁶³Cu</option>
+                <option value="65Cu">⁶⁵Cu</option>
+                <option value="55Mn">⁵⁵Mn</option>
+                <option value="57Fe">⁵⁷Fe</option>
+              </select>
+              <button id="add-nucleus-btn" style="padding:8px 14px;min-width:auto;" onclick="addNucleus()">
+                <span class="material-icons-round">add</span>
+                Add
+              </button>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /pane-params -->
+
+      <!-- === EXPERIMENT TAB === -->
+      <div id="pane-exp" class="tab-pane" style="display:none;">
+
+        <!-- Simulator selector card -->
+        <div class="param-card" id="card-simulator">
+          <div class="card-header" onclick="toggleCard('card-simulator')">
+            <div class="card-icon" style="background: linear-gradient(135deg, #1565C0, #3D5AFE)">
+              <span class="material-icons-round">memory</span>
+            </div>
+            <div style="flex:1">
+              <div class="card-title">Simulator</div>
+              <div class="card-subtitle" id="sim-summary">garlic — liquid state</div>
+            </div>
+            <span class="material-icons-round card-chevron">expand_more</span>
+          </div>
+          <div class="card-body">
+            <div class="sim-toggle">
+              <button class="sim-btn garlic active" id="btn-garlic" onclick="setSimulator('garlic')">
+                garlic()<br><small style="font-weight:400;font-size:0.68rem;">liquid / fast-motion</small>
+              </button>
+              <button class="sim-btn pepper" id="btn-pepper" onclick="setSimulator('pepper')">
+                pepper()<br><small style="font-weight:400;font-size:0.68rem;">solid / powder</small>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- MW & Field card -->
+        <div class="param-card" id="card-mw">
+          <div class="card-header" onclick="toggleCard('card-mw')">
+            <div class="card-icon" style="background: linear-gradient(135deg, #006064, #00BCD4)">
+              <span class="material-icons-round">wifi</span>
+            </div>
+            <div style="flex:1">
+              <div class="card-title">Microwave & Field</div>
+              <div class="card-subtitle" id="mw-summary">9.50 GHz · 300–400 mT</div>
+            </div>
+            <span class="material-icons-round card-chevron">expand_more</span>
+          </div>
+          <div class="card-body">
+            <div class="field-group">
+              <label class="field-label" data-tip="Microwave frequency in GHz">mwFreq (GHz)</label>
+              <input type="number" id="f-mwFreq" value="9.5" step="0.1" min="0.1"/>
+            </div>
+            <div class="field-row">
+              <div class="field-group">
+                <label class="field-label">B min (mT)</label>
+                <input type="number" id="f-Bmin" value="300" step="5"/>
+              </div>
+              <div class="field-group">
+                <label class="field-label">B max (mT)</label>
+                <input type="number" id="f-Bmax" value="400" step="5"/>
+              </div>
+            </div>
+            <div class="field-group">
+              <label class="field-label">nPoints</label>
+              <select id="f-nPoints">
+                <option value="512">512</option>
+                <option value="1024" selected>1024</option>
+                <option value="2048">2048</option>
+                <option value="4096">4096</option>
+              </select>
+            </div>
+            <div class="field-group">
+              <label class="field-label">Detection mode</label>
+              <div class="seg-control">
+                <button class="seg-btn" id="btn-absorption" onclick="setHarmonic(0)">Absorption</button>
+                <button class="seg-btn active" id="btn-derivative" onclick="setHarmonic(1)">1st Derivative</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Energy levels card -->
+        <div class="param-card collapsed" id="card-levels-opt">
+          <div class="card-header" onclick="toggleCard('card-levels-opt')">
+            <div class="card-icon" style="background: linear-gradient(135deg, #4A148C, #7B1FA2)">
+              <span class="material-icons-round">stacked_line_chart</span>
+            </div>
+            <div style="flex:1">
+              <div class="card-title">Energy Levels</div>
+              <div class="card-subtitle">0–400 mT · 200 pts</div>
+            </div>
+            <span class="material-icons-round card-chevron">expand_more</span>
+          </div>
+          <div class="card-body">
+            <div class="field-row">
+              <div class="field-group">
+                <label class="field-label">B min (mT)</label>
+                <input type="number" id="f-lvl-Bmin" value="0" step="10"/>
+              </div>
+              <div class="field-group">
+                <label class="field-label">B max (mT)</label>
+                <input type="number" id="f-lvl-Bmax" value="400" step="10"/>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /pane-exp -->
+
+      <!-- === TUTORIAL TAB === -->
+      <div id="pane-tutorial" class="tab-pane" style="display:none; padding:4px;">
+        <div style="padding:8px 4px 12px; color:var(--text-dim); font-size:0.82rem; line-height:1.7;">
+          <h2 style="font-size:1rem; color:var(--text); margin-bottom:12px;">
+            <span class="material-icons-round" style="vertical-align:middle;color:var(--accent)">help_outline</span>
+            Quick Start Guide
+          </h2>
+
+          <div style="margin-bottom:12px;">
+            <strong style="color:var(--text)">1. Set up your spin system</strong><br/>
+            Define the electron spin S, g-tensor, and any nuclei with their hyperfine couplings.
+          </div>
+
+          <div style="margin-bottom:12px;">
+            <strong style="color:var(--text)">2. Choose a simulator</strong><br/>
+            Use <code style="color:var(--accent)">garlic()</code> for liquid/solution EPR (fast tumbling, S=1/2).<br/>
+            Use <code style="color:var(--primary)">pepper()</code> for solid-state/powder EPR (any S).
+          </div>
+
+          <div style="margin-bottom:12px;">
+            <strong style="color:var(--text)">3. Set experiment parameters</strong><br/>
+            Enter the microwave frequency and magnetic field range matching your spectrometer.
+          </div>
+
+          <div style="margin-bottom:16px;">
+            <strong style="color:var(--text)">4. Simulate!</strong><br/>
+            Press the <strong style="color:var(--accent)">Simulate</strong> button. The spectrum and energy level diagram update automatically.
+          </div>
+
+          <hr class="card-sep"/>
+          <div style="margin-top:12px;font-size:0.75rem;">
+            <strong style="color:var(--text)">EasySpin Documentation</strong>
+            <div style="margin-top:6px;display:flex;flex-direction:column;gap:6px;">
+              <a href="https://easyspin.org/easyspin/documentation/garlic.html" target="_blank"
+                 style="color:var(--accent);text-decoration:none;display:flex;align-items:center;gap:4px;">
+                <span class="material-icons-round" style="font-size:14px;">open_in_new</span>garlic() reference
+              </a>
+              <a href="https://easyspin.org/easyspin/documentation/pepper.html" target="_blank"
+                 style="color:var(--primary);text-decoration:none;display:flex;align-items:center;gap:4px;">
+                <span class="material-icons-round" style="font-size:14px;">open_in_new</span>pepper() reference
+              </a>
+              <a href="https://easyspin.org/easyspin/documentation/levels.html" target="_blank"
+                 style="color:var(--info);text-decoration:none;display:flex;align-items:center;gap:4px;">
+                <span class="material-icons-round" style="font-size:14px;">open_in_new</span>levels() reference
+              </a>
+              <a href="https://easyspin.org/easyspin/documentation/spinsystem.html" target="_blank"
+                 style="color:var(--warning);text-decoration:none;display:flex;align-items:center;gap:4px;">
+                <span class="material-icons-round" style="font-size:14px;">open_in_new</span>Spin System structure
+              </a>
+            </div>
+          </div>
+
+          <div style="margin-top:16px;">
+            <button onclick="startTour()" style="width:100%;padding:10px;background:var(--primary);
+              border:none;border-radius:8px;color:white;font-weight:600;cursor:pointer;font-size:0.85rem;">
+              <span class="material-icons-round" style="vertical-align:middle;font-size:16px;">
+                play_circle_outline
+              </span>
+              Start Interactive Tour
+            </button>
+          </div>
+        </div>
+      </div><!-- /pane-tutorial -->
+
+    </div><!-- /panel-scroll -->
+
+    <!-- Validation area -->
+    <div id="validation-area"></div>
+
+    <!-- Simulate button -->
+    <div id="panel-footer">
+      <button id="simulate-btn" onclick="runSimulation()">
+        <span class="material-icons-round" id="sim-icon">play_arrow</span>
+        Simulate
+      </button>
+    </div>
+
+  </aside><!-- /side-panel -->
+
+  <!-- ================================================================
+       MAIN CONTENT
+  ================================================================ -->
+  <div id="main-content">
+
+    <!-- Top bar -->
+    <header id="top-bar">
+      <span class="material-icons-round" style="color:var(--accent);font-size:24px;">sensors</span>
+      <h1>EPR Simulator</h1>
+      <span id="hsdim-badge">dim = 2</span>
+      <button class="icon-btn" onclick="startTour()" title="Tour">
+        <span class="material-icons-round">help_outline</span>
+      </button>
+    </header>
+
+    <!-- Plot area (desktop) -->
+    <div id="plot-area">
+      <div class="plot-card" id="spectrum-card">
+        <div class="plot-title">
+          <span class="material-icons-round">show_chart</span>
+          CW EPR Spectrum
+          <span id="spectrum-badge" style="margin-left:auto;font-size:0.7rem;color:var(--text-hint);font-weight:400;"></span>
+        </div>
+        <div class="plot-container">
+          <div id="spectrum-plot">
+            <div class="plot-empty">
+              <span class="material-icons-round">science</span>
+              <p>Press Simulate to compute the spectrum</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="plot-card" id="levels-card">
+        <div class="plot-title">
+          <span class="material-icons-round">stacked_line_chart</span>
+          Energy Level Diagram
+        </div>
+        <div class="plot-container">
+          <div id="levels-plot">
+            <div class="plot-empty">
+              <span class="material-icons-round">stacked_line_chart</span>
+              <p>Energy levels appear here after simulation</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mobile views -->
+    <div id="mobile-params" class="active"><!-- populated by JS --></div>
+    <div id="mobile-spectrum">
+      <div style="height:calc(100vw * 0.7); min-height:200px;" id="m-spectrum-plot">
+        <div class="plot-empty" style="height:100%">
+          <span class="material-icons-round">science</span><p>Press Simulate</p>
+        </div>
+      </div>
+    </div>
+    <div id="mobile-levels">
+      <div style="height:calc(100vw * 0.7); min-height:200px;" id="m-levels-plot">
+        <div class="plot-empty" style="height:100%">
+          <span class="material-icons-round">stacked_line_chart</span><p>Press Simulate</p>
+        </div>
+      </div>
+    </div>
+    <div id="mobile-tutorial"><!-- content cloned from pane-tutorial --></div>
+    <div id="mobile-examples"><!-- content cloned from pane-examples --></div>
+
+    <!-- Bottom navigation (mobile) -->
+    <nav id="bottom-nav">
+      <button class="bottom-nav-btn active" data-mobile-tab="mobile-params" onclick="switchMobileTab(this)">
+        <span class="material-icons-round">tune</span>Parameters
+      </button>
+      <button class="bottom-nav-btn" data-mobile-tab="mobile-spectrum" onclick="switchMobileTab(this)">
+        <span class="material-icons-round">show_chart</span>Spectrum
+      </button>
+      <button class="bottom-nav-btn" data-mobile-tab="mobile-levels" onclick="switchMobileTab(this)">
+        <span class="material-icons-round">stacked_line_chart</span>Levels
+      </button>
+      <button class="bottom-nav-btn" data-mobile-tab="mobile-examples" onclick="switchMobileTab(this)">
+        <span class="material-icons-round">category</span>Presets
+      </button>
+      <button class="bottom-nav-btn" data-mobile-tab="mobile-tutorial" onclick="switchMobileTab(this)">
+        <span class="material-icons-round">help_outline</span>Guide
+      </button>
+    </nav>
+
+  </div><!-- /main-content -->
+
+</div><!-- /app-shell -->
+
+<!-- Mobile FAB (simulate) -->
+<button id="mobile-fab" onclick="runSimulation()" title="Simulate">
+  <span class="material-icons-round">play_arrow</span>
+</button>
+
+<script src="/static/app.js?v=2" defer></script>
+<script src="/static/tour.js" defer></script>
+</body>
+</html>
