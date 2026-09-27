@@ -140,6 +140,33 @@ def test_pepper_axial_zfs():
     print(f"PASS: pepper() S=1 axial ZFS — max intensity = {np.max(spc):.4f}")
 
 
+def test_pepper_single_orientation():
+    """
+    Test single orientation calculation for pepper.
+    With an anisotropic g-tensor [2.00, 2.10, 2.20], the resonance field for
+    theta=0, phi=0 (along z, g=2.20) must be lower than for theta=90, phi=0 (along x, g=2.00).
+    """
+    sys = SpinSystem(S=0.5, g=[2.00, 2.10, 2.20], lw=[1.0])
+    exp_z = {
+        'mwFreq': 9.5, 'Range': [300, 350], 'nPoints': 256, 'Harmonic': 0,
+        'singleOrientation': True, 'orientation': [0.0, 0.0]
+    }
+    B_z, spc_z = pepper(sys, exp_z)
+    max_idx_z = np.argmax(spc_z)
+    B_res_z = B_z[max_idx_z]
+
+    exp_x = {
+        'mwFreq': 9.5, 'Range': [300, 350], 'nPoints': 256, 'Harmonic': 0,
+        'singleOrientation': True, 'orientation': [90.0, 0.0]
+    }
+    B_x, spc_x = pepper(sys, exp_x)
+    max_idx_x = np.argmax(spc_x)
+    B_res_x = B_x[max_idx_x]
+
+    assert B_res_z < B_res_x, f"Expected B_res_z < B_res_x, got {B_res_z} and {B_res_x}"
+    print(f"PASS: pepper() single orientation — B_res_z={B_res_z:.2f} mT, B_res_x={B_res_x:.2f} mT")
+
+
 # ---------------------------------------------------------------------------
 # Run all tests
 # ---------------------------------------------------------------------------
@@ -159,5 +186,6 @@ if __name__ == '__main__':
     print("\n--- pepper() ---")
     test_pepper_isotropic_g()
     test_pepper_axial_zfs()
+    test_pepper_single_orientation()
 
     print("\nAll Phase 3 tests passed!")

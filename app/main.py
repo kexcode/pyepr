@@ -75,8 +75,11 @@ def _sys_to_state(sys: SpinSystem) -> SpinSystemState:
             NucleusResponse(
                 symbol=n.symbol,
                 A=n.A,
-                A_aniso=n.A_aniso,
+                A_aniso=n.A_aniso if n.A_aniso is not None else [n.A, n.A, n.A],
                 Q=n.Q,
+                Q_aniso=n.Q_aniso if n.Q_aniso is not None else (
+                    [-round(n.Q/3.0, 4), -round(n.Q/3.0, 4), round(2.0*n.Q/3.0, 4)] if n.I >= 1 else [0.0, 0.0, 0.0]
+                ),
                 label=n.label,
                 I=n.I,
                 gn=n.gn,
@@ -130,8 +133,31 @@ def add_nucleus(req: NucleusRequest):
             A=req.A,
             A_aniso=req.A_aniso,
             Q=req.Q,
+            Q_aniso=req.Q_aniso,
             label=req.label,
         )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return _sys_to_state(sys)
+
+
+@app.put("/api/system/nuclei/{idx}", response_model=SpinSystemState, tags=["Nuclei"])
+def update_nucleus(idx: int, req: NucleusRequest):
+    """Update nucleus at index idx (0-based) in place."""
+    sys = get_spin_system()
+    if idx < 0 or idx >= len(sys.nuclei):
+        raise HTTPException(status_code=404, detail="Nucleus index out of range")
+    try:
+        from easyspin_py.core.isotopes import nucspin, nucgval
+        nuc = sys.nuclei[idx]
+        nuc.symbol = req.symbol
+        nuc.A = req.A
+        nuc.A_aniso = req.A_aniso
+        nuc.Q = req.Q
+        nuc.Q_aniso = req.Q_aniso
+        nuc.label = req.label
+        nuc._I = float(nucspin(req.symbol))
+        nuc._gn = float(nucgval(req.symbol))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return _sys_to_state(sys)
@@ -206,8 +232,16 @@ def simulate_spectrum(params: ExperimentParams):
         "Range": [params.B_min, params.B_max],
         "nPoints": params.nPoints,
         "Harmonic": params.Harmonic,
+        "method": params.method,
+        "singleOrientation": params.singleOrientation,
+        "orientation": params.orientation,
     }
-    opt = {"nKnots": params.nKnots}
+    opt = {
+        "nKnots": params.nKnots,
+        "method": params.method,
+        "singleOrientation": params.singleOrientation,
+        "orientation": params.orientation,
+    }
 
     # Run validation first (collect messages without stopping)
     if params.simulator == "garlic":
@@ -223,7 +257,7 @@ def simulate_spectrum(params: ExperimentParams):
         with warnings.catch_warnings(record=True):
             warnings.simplefilter("always")
             if params.simulator == "garlic":
-                B, spc = garlic(sys, exp)
+                B, spc = garlic(sys, exp, opt)
             else:
                 B, spc = pepper(sys, exp, opt)
     except Exception as e:
@@ -240,20 +274,39 @@ def simulate_spectrum(params: ExperimentParams):
 
 @app.post("/api/simulate/levels", response_model=LevelsResponse, tags=["Simulation"])
 def simulate_levels(params: LevelsParams):
-    """Run levels() and return energy level data."""
+    """Run levels() and return energy level data and EPR transitions."""
     sys = get_spin_system()
     val_result = validate_levels(sys)
 
     if val_result.has_errors:
         raise HTTPException(status_code=422, detail=val_result.to_dict())
 
+    B_dir = None
+    if params.orientation and len(params.orientation) >= 2:
+        theta_rad = np.radians(float(params.orientation[0]))
+        phi_rad = np.radians(float(params.orientation[1]))
+        B_dir = np.array([
+            np.sin(theta_rad) * np.cos(phi_rad),
+            np.sin(theta_rad) * np.sin(phi_rad),
+            np.cos(theta_rad),
+        ])
+
     try:
-        E, B = levels(sys, [params.B_min, params.B_max], n_points=params.nPoints)
+        E, B, trans = levels(
+            sys,
+            [params.B_min, params.B_max],
+            B_dir=B_dir,
+            n_points=params.nPoints,
+            method=params.method,
+            mw_freq_GHz=params.mwFreq,
+            return_transitions=True,
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
     return LevelsResponse(
         B=B.tolist(),
         E=E.tolist(),
+        transitions=trans,
         validation=val_result.to_dict(),
     )

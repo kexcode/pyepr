@@ -166,17 +166,8 @@ def ham_hf(sys: SpinSystem) -> sp.csr_matrix:
         if sys.I[n_idx] == 0:
             continue
 
-        # Build A matrix for this nucleus (row = electron spin component 1..nElectrons)
-        # For a 1-electron system the A array is indexed directly per nucleus
-        if A_arr.ndim == 1:
-            # One A value per nucleus (isotropic)
-            a_val = A_arr[n_idx] if n_idx < len(A_arr) else 0.0
-            A_mat = np.diag([a_val, a_val, a_val])
-        elif A_arr.ndim == 2 and A_arr.shape[1] == 3:
-            # 3 principal values per nucleus
-            A_mat = np.diag(A_arr[n_idx])
-        else:
-            A_mat = A_arr
+        nuc = sys.nuclei[n_idx]
+        A_mat = nuc.A_eff
 
         global_n = sys.nElectrons + n_idx + 1  # 1-based
 
@@ -261,12 +252,10 @@ def ham_nq(sys: SpinSystem) -> sp.csr_matrix:
         if sys.I[n_idx] < 1:
             continue  # quadrupole only for I >= 1
 
-        q_val = Q_arr[n_idx] if n_idx < len(Q_arr) else 0.0
-        if q_val == 0:
+        nuc = sys.nuclei[n_idx]
+        Q_mat = nuc.Q_mat
+        if not np.any(Q_mat):
             continue
-
-        # For simple scalar Q input, interpret as the axial quadrupole coupling
-        Q_mat = np.diag([-q_val / 3, -q_val / 3, 2 * q_val / 3])
 
         global_n = sys.nElectrons + n_idx + 1
         Ixyz = [sop(spins, global_n, c, sparse=True) for c in ['x', 'y', 'z']]

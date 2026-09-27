@@ -19,9 +19,9 @@
   --error:       #FF5252;
   --info:        #64B5F6;
   --text:        #FFFFFF;
-  --text-dim:    #A0AEC0;
-  --text-hint:   #606880;
-  --border:      #2D3055;
+  --text-dim:    #CBD5E1;
+  --text-hint:   #94A3B8;
+  --border:      #334155;
   --radius-sm:   8px;
   --radius-md:   14px;
   --radius-lg:   20px;
@@ -308,49 +308,210 @@ select option { background: var(--surface2); }
 .sim-btn.active.garlic { border-color: var(--accent); color: var(--accent); background: rgba(0,188,212,0.1); }
 .sim-btn.active.pepper { border-color: var(--primary); color: var(--primary); background: rgba(61,90,254,0.1); }
 
+/* Model toggle */
+.model-toggle {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+  background: var(--surface);
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--border);
+}
+
+/* Orientation controls & toggle switch */
+.toggle-switch-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 0;
+}
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 40px;
+  height: 22px;
+  flex-shrink: 0;
+}
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-color: var(--surface2);
+  border: 1.5px solid var(--border);
+  transition: var(--transition);
+  border-radius: 22px;
+}
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 14px;
+  width: 14px;
+  left: 2px;
+  bottom: 2px;
+  background-color: var(--text-dim);
+  transition: var(--transition);
+  border-radius: 50%;
+}
+input:checked + .slider {
+  background-color: rgba(0, 188, 212, 0.25);
+  border-color: var(--accent);
+}
+input:checked + .slider:before {
+  transform: translateX(18px);
+  background-color: var(--accent);
+}
+
+.ori-preset-group {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-top: 6px;
+}
+.ori-preset-btn {
+  padding: 6px 3px;
+  border: 1.5px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition);
+  text-align: center;
+}
+.ori-preset-btn:hover {
+  border-color: var(--accent);
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.04);
+}
+.ori-preset-btn.active {
+  border-color: var(--accent);
+  background: rgba(0, 188, 212, 0.18);
+  color: #00E5FF;
+  font-weight: 700;
+}
+.model-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 4px;
+  border: 1.5px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: var(--transition);
+  text-align: center;
+}
+.model-btn-name {
+  font-size: 0.74rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.model-btn-desc {
+  font-size: 0.60rem;
+  color: var(--text-hint);
+  margin-top: 2px;
+}
+.model-btn:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+.model-btn.active {
+  background: rgba(0, 230, 118, 0.12);
+  border-color: #00E676;
+  color: #00E676;
+}
+.model-btn.active .model-btn-desc {
+  color: #B9F6CA;
+}
+
+/* Preset badge chip */
+.preset-badge {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(0, 188, 212, 0.15);
+  color: var(--accent);
+  letter-spacing: 0.5px;
+}
+
 /* ================================================================
    NUCLEI TABLE
    ================================================================ */
 
-#nuclei-list { display: flex; flex-direction: column; gap: 6px; }
+#nuclei-list { display: flex; flex-direction: column; gap: 8px; }
 
-.nucleus-row {
+.nucleus-tile {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface2);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  gap: 8px;
+  animation: slideIn 0.2s ease;
+  transition: border-color var(--transition);
+}
+.nucleus-tile:hover {
+  border-color: rgba(0, 188, 212, 0.4);
+}
+
+.nucleus-tile-header {
   display: flex;
   align-items: center;
-  gap: 6px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 8px 10px;
-  animation: slideIn 0.2s ease;
-}
-@keyframes slideIn {
-  from { opacity: 0; transform: translateY(-8px); }
-  to   { opacity: 1; transform: translateY(0); }
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  padding-bottom: 6px;
 }
 
 .nucleus-chip {
-  font-size: 0.78rem;
-  font-weight: 600;
+  font-size: 0.85rem;
+  font-weight: 700;
   font-family: 'Roboto Mono', monospace;
-  color: var(--accent);
-  min-width: 36px;
-  flex-shrink: 0;
+  color: #00E5FF;
+  background: rgba(0, 229, 255, 0.12);
+  border: 1px solid rgba(0, 229, 255, 0.3);
+  border-radius: 4px;
+  padding: 2px 7px;
+  display: inline-flex;
+  align-items: center;
 }
 
-.nucleus-row input {
-  padding: 5px 8px;
-  font-size: 0.8rem;
+.nucleus-badge-meta {
+  font-size: 0.70rem;
+  font-family: 'Roboto Mono', monospace;
+  color: var(--text-dim);
+  background: var(--surface);
+  border-radius: 4px;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+}
+
+.nucleus-tile input {
+  padding: 5px 6px;
+  font-size: 0.78rem;
+  text-align: center;
 }
 
 .nucleus-field-label {
-  font-size: 0.6rem;
+  font-size: 0.62rem;
+  font-weight: 600;
   color: var(--text-hint);
   text-align: center;
   margin-top: 2px;
+  letter-spacing: 0.03em;
 }
-
-.nucleus-col { display: flex; flex-direction: column; flex: 1; }
 
 .del-btn {
   background: none;

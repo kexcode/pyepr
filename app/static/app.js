@@ -12,8 +12,110 @@
 let state = {
   simulator: 'garlic',
   harmonic: 1,
+  method: 'matrix',
+  singleOrientation: false,
+  theta: 0.0,
+  phi: 0.0,
   systemState: null,
 };
+
+function setModel(method, triggerSim = true) {
+  state.method = method;
+  ['matrix', 'perturb2'].forEach(m => {
+    const btn = document.getElementById('btn-model-' + m);
+    if (btn) btn.classList.toggle('active', m === method);
+  });
+  const summaryEl = document.getElementById('model-summary');
+  if (summaryEl) {
+    if (method === 'matrix') summaryEl.textContent = 'Matrix diagonalization (exact)';
+    else summaryEl.textContent = 'Perturbation (2nd order)';
+  }
+  // Re-run simulation with the new model if requested
+  if (triggerSim) {
+    runSimulation();
+  }
+}
+
+function toggleSingleOrientation(active) {
+  state.singleOrientation = active;
+  const ctrl = document.getElementById('ori-controls');
+  if (ctrl) ctrl.style.display = active ? 'block' : 'none';
+  updateOrientationSummary();
+  runSimulation();
+}
+
+function updateOrientationSummary() {
+  const sumEl = document.getElementById('ori-summary');
+  if (!sumEl) return;
+  if (!state.singleOrientation) {
+    sumEl.textContent = 'Powder average';
+  } else {
+    sumEl.textContent = `Single: θ=${state.theta}°, φ=${state.phi}°`;
+  }
+}
+
+function updateOrientationPresetButtons(activePreset) {
+  ['x', 'y', 'z', 'rnd'].forEach(k => {
+    const btn = document.getElementById('btn-ori-' + k);
+    if (!btn) return;
+    if (activePreset === 'X' && k === 'x') btn.classList.add('active');
+    else if (activePreset === 'Y' && k === 'y') btn.classList.add('active');
+    else if (activePreset === 'Z' && k === 'z') btn.classList.add('active');
+    else if (activePreset === 'random' && k === 'rnd') btn.classList.add('active');
+    else btn.classList.remove('active');
+  });
+}
+
+function setOrientationPreset(preset) {
+  if (preset === 'X') {
+    state.theta = 90.0;
+    state.phi = 0.0;
+  } else if (preset === 'Y') {
+    state.theta = 90.0;
+    state.phi = 90.0;
+  } else if (preset === 'Z') {
+    state.theta = 0.0;
+    state.phi = 0.0;
+  } else if (preset === 'random') {
+    // Uniform spherical sampling
+    const u = Math.random();
+    state.theta = Math.round(Math.acos(2 * u - 1) * (180 / Math.PI) * 10) / 10;
+    state.phi = Math.round(Math.random() * 360 * 10) / 10;
+  }
+  const tEl = document.getElementById('f-theta');
+  const pEl = document.getElementById('f-phi');
+  if (tEl) tEl.value = state.theta;
+  if (pEl) pEl.value = state.phi;
+
+  updateOrientationPresetButtons(preset);
+  updateOrientationSummary();
+  runSimulation();
+}
+
+let _oriDebounceTimer = null;
+function onOrientationInputChange(immediate = false) {
+  const tEl = document.getElementById('f-theta');
+  const pEl = document.getElementById('f-phi');
+  const theta = parseFloat(tEl?.value || 0.0);
+  const phi = parseFloat(pEl?.value || 0.0);
+  state.theta = theta;
+  state.phi = phi;
+
+  // Update preset highlights if matching
+  if (theta === 90 && phi === 0) updateOrientationPresetButtons('X');
+  else if (theta === 90 && phi === 90) updateOrientationPresetButtons('Y');
+  else if (theta === 0 && phi === 0) updateOrientationPresetButtons('Z');
+  else updateOrientationPresetButtons('');
+
+  updateOrientationSummary();
+
+  clearTimeout(_oriDebounceTimer);
+  if (immediate) {
+    runSimulation();
+  } else {
+    _oriDebounceTimer = setTimeout(runSimulation, 350);
+  }
+}
 
 // ============================================================
 // API helpers
@@ -131,7 +233,14 @@ function setSimulator(sim) {
   document.getElementById('btn-garlic').classList.toggle('active', sim === 'garlic');
   document.getElementById('btn-pepper').classList.toggle('active', sim === 'pepper');
   document.getElementById('sim-summary').textContent =
-    sim === 'garlic' ? 'garlic \u2014 liquid state' : 'pepper \u2014 powder/solid';
+    sim === 'garlic' ? 'garlic — liquid state' : 'pepper — powder/solid';
+
+  // Toggle orientation card: only visible for solid state pepper
+  const oriCard = document.getElementById('card-orientation');
+  if (oriCard) {
+    oriCard.style.display = (sim === 'pepper') ? '' : 'none';
+  }
+
   refreshValidation();
 }
 
@@ -151,9 +260,98 @@ function setHarmonic(h) {
 
 function bindInputListeners() {
   const push = () => pushSystemParams();
-  ['f-S','f-gx','f-gy','f-gz','f-D','f-E','f-lG','f-lL','f-mwFreq'].forEach(id => {
+  ['f-S','f-gx','f-gy','f-gz','f-D','f-E','f-lG','f-lL'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('change', push);
+  });
+
+  // Active Bmin/Bmax listeners for immediate plot adjustment
+  bindActiveFieldListeners();
+
+  // Orientation angle inputs
+  const thetaEl = document.getElementById('f-theta');
+  const phiEl = document.getElementById('f-phi');
+  [thetaEl, phiEl].forEach(el => {
+    if (!el) return;
+    el.addEventListener('input', () => onOrientationInputChange(false));
+    el.addEventListener('change', () => onOrientationInputChange(true));
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        onOrientationInputChange(true);
+      }
+    });
+  });
+}
+
+let _spectrumDebounceTimer = null;
+let _levelsDebounceTimer = null;
+
+function onFieldParamsChange(immediate = false) {
+  const mwFreq = parseFloat(document.getElementById('f-mwFreq')?.value || 9.5);
+  const Bmin = parseFloat(document.getElementById('f-Bmin')?.value || 300);
+  const Bmax = parseFloat(document.getElementById('f-Bmax')?.value || 400);
+
+  const mwSummary = document.getElementById('mw-summary');
+  if (mwSummary) mwSummary.textContent = `${mwFreq.toFixed(2)} GHz · ${Bmin}–${Bmax} mT`;
+
+  if (Bmin >= Bmax) return;
+
+  clearTimeout(_spectrumDebounceTimer);
+  if (immediate) {
+    simulateSpectrumOnly();
+  } else {
+    _spectrumDebounceTimer = setTimeout(simulateSpectrumOnly, 350);
+  }
+}
+
+function onLevelsFieldChange(immediate = false) {
+  const lvlBmin = parseFloat(document.getElementById('f-lvl-Bmin')?.value || 0);
+  const lvlBmax = parseFloat(document.getElementById('f-lvl-Bmax')?.value || 400);
+
+  const lvlSummary = document.getElementById('levels-summary');
+  if (lvlSummary) lvlSummary.textContent = `${lvlBmin}–${lvlBmax} mT · 200 pts`;
+
+  if (lvlBmin >= lvlBmax) return;
+
+  clearTimeout(_levelsDebounceTimer);
+  if (immediate) {
+    simulateLevelsOnly();
+  } else {
+    _levelsDebounceTimer = setTimeout(simulateLevelsOnly, 350);
+  }
+}
+
+function bindActiveFieldListeners() {
+  const bminEl = document.getElementById('f-Bmin');
+  const bmaxEl = document.getElementById('f-Bmax');
+  const mwFreqEl = document.getElementById('f-mwFreq');
+
+  [bminEl, bmaxEl, mwFreqEl].forEach(el => {
+    if (!el) return;
+    el.addEventListener('input', () => onFieldParamsChange(false));
+    el.addEventListener('change', () => onFieldParamsChange(true));
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        onFieldParamsChange(true);
+      }
+    });
+  });
+
+  const lvlBminEl = document.getElementById('f-lvl-Bmin');
+  const lvlBmaxEl = document.getElementById('f-lvl-Bmax');
+
+  [lvlBminEl, lvlBmaxEl].forEach(el => {
+    if (!el) return;
+    el.addEventListener('input', () => onLevelsFieldChange(false));
+    el.addEventListener('change', () => onLevelsFieldChange(true));
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        onLevelsFieldChange(true);
+      }
+    });
   });
 }
 
@@ -211,62 +409,131 @@ async function removeNucleus(idx) {
   }
 }
 
-async function updateNucleusA(idx, value) {
-  // Debounced push: update local state immediately, push to API after 500ms
-  clearTimeout(window._nucleusTimer);
-  window._nucleusTimer = setTimeout(async () => {
-    // Rebuild the full nucleus from current UI
-    const rows = document.querySelectorAll('#nuclei-list .nucleus-row');
-    if (!rows[idx]) return;
-    const A = parseFloat(rows[idx].querySelector('.nuc-A').value) || 0;
-    const Q = parseFloat(rows[idx].querySelector('.nuc-Q')?.value || 0);
-    const sym = state.systemState.nuclei[idx].symbol;
-    // Remove and re-add to update (simplest approach given current API)
-    try {
-      await DELETE('/api/system/nuclei/' + idx);
-      // Re-insert at same position by adding to end (limitation of current API)
-      // For now use add — full reorder API is a future enhancement
-      state.systemState = await POST('/api/system/nuclei', { symbol: sym, A, Q, label: null });
-      updateHsdimBadge(state.systemState.hsdim);
-      await refreshValidation();
-    } catch (e) {
-      console.error('Nucleus update failed:', e);
-    }
-  }, 600);
+let _nucleusTimer = null;
+function onNucleusInput(idx, immediate = false) {
+  clearTimeout(_nucleusTimer);
+  if (immediate) {
+    saveNucleusParams(idx);
+  } else {
+    _nucleusTimer = setTimeout(() => saveNucleusParams(idx), 400);
+  }
+}
+
+async function saveNucleusParams(idx) {
+  const tile = document.getElementById(`nucleus-tile-${idx}`);
+  if (!tile || !state.systemState || !state.systemState.nuclei[idx]) return;
+
+  const Ax = parseFloat(tile.querySelector('.nuc-Ax')?.value || 0);
+  const Ay = parseFloat(tile.querySelector('.nuc-Ay')?.value || 0);
+  const Az = parseFloat(tile.querySelector('.nuc-Az')?.value || 0);
+
+  const Qx = parseFloat(tile.querySelector('.nuc-Qx')?.value || 0);
+  const Qy = parseFloat(tile.querySelector('.nuc-Qy')?.value || 0);
+  const Qz = parseFloat(tile.querySelector('.nuc-Qz')?.value || 0);
+
+  const sym = state.systemState.nuclei[idx].symbol;
+  const A_iso = (Ax + Ay + Az) / 3.0;
+  const Q_scalar = Qz;
+
+  try {
+    state.systemState = await PUT(`/api/system/nuclei/${idx}`, {
+      symbol: sym,
+      A: A_iso,
+      A_aniso: [Ax, Ay, Az],
+      Q: Q_scalar,
+      Q_aniso: [Qx, Qy, Qz],
+      label: null
+    });
+    updateSummaries(state.systemState);
+    updateHsdimBadge(state.systemState.hsdim);
+    await refreshValidation();
+    runSimulation();
+  } catch (e) {
+    console.error('Failed to update nucleus:', e);
+  }
 }
 
 function renderNucleiList(nuclei) {
   const list = document.getElementById('nuclei-list');
   if (!list) return;
   list.innerHTML = '';
-  if (nuclei.length === 0) {
-    list.innerHTML = '<div style="color:var(--text-hint);font-size:0.78rem;text-align:center;padding:8px;">No nuclei added</div>';
+  if (!nuclei || nuclei.length === 0) {
+    list.innerHTML = '<div style="color:var(--text-hint);font-size:0.78rem;text-align:center;padding:12px 8px;border:1.5px dashed var(--border);border-radius:var(--radius-sm);">No nuclei added</div>';
     return;
   }
   nuclei.forEach((n, idx) => {
-    const row = document.createElement('div');
-    row.className = 'nucleus-row';
-    row.innerHTML = `
-      <div class="nucleus-chip">${n.symbol}</div>
-      <div class="nucleus-col">
-        <input type="number" class="nuc-A" value="${n.A}" step="1"
-               onchange="updateNucleusA(${idx}, this.value)" placeholder="A"/>
-        <div class="nucleus-field-label">A (MHz)</div>
+    const Ax = n.A_aniso && n.A_aniso.length >= 1 ? n.A_aniso[0] : (n.A || 0);
+    const Ay = n.A_aniso && n.A_aniso.length >= 2 ? n.A_aniso[1] : (n.A || 0);
+    const Az = n.A_aniso && n.A_aniso.length >= 3 ? n.A_aniso[2] : (n.A || 0);
+
+    const Qx = n.Q_aniso && n.Q_aniso.length >= 1 ? n.Q_aniso[0] : (n.I >= 1 ? -Math.round(n.Q / 3.0 * 100) / 100 : 0);
+    const Qy = n.Q_aniso && n.Q_aniso.length >= 2 ? n.Q_aniso[1] : (n.I >= 1 ? -Math.round(n.Q / 3.0 * 100) / 100 : 0);
+    const Qz = n.Q_aniso && n.Q_aniso.length >= 3 ? n.Q_aniso[2] : (n.I >= 1 ? Math.round(2.0 * n.Q / 3.0 * 100) / 100 : 0);
+
+    const tile = document.createElement('div');
+    tile.className = 'nucleus-tile';
+    tile.id = `nucleus-tile-${idx}`;
+    tile.innerHTML = `
+      <div class="nucleus-tile-header">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <div class="nucleus-chip">${n.symbol}</div>
+          <span class="nucleus-badge-meta">I = ${n.I}</span>
+          <span class="nucleus-badge-meta">gₙ = ${n.gn.toFixed(4)}</span>
+        </div>
+        <button class="del-btn" onclick="removeNucleus(${idx})" title="Remove ${n.symbol}">
+          <span class="material-icons-round">close</span>
+        </button>
       </div>
-      ${n.I >= 1 ? `
-      <div class="nucleus-col">
-        <input type="number" class="nuc-Q" value="${n.Q}" step="0.1"
-               onchange="updateNucleusA(${idx}, 0)" placeholder="Q"/>
-        <div class="nucleus-field-label">Q (MHz)</div>
-      </div>` : ''}
-      <div style="font-size:0.68rem;color:var(--text-hint);font-family:'Roboto Mono',monospace;flex-shrink:0;">
-        I=${n.I}
+
+      <div class="field-group">
+        <label class="field-label" data-tip="Hyperfine tensor principal values: Ax, Ay, Az in MHz">A-Tensor (Ax, Ay, Az in MHz)</label>
+        <div class="field-row">
+          <div class="field-group">
+            <input type="number" class="nuc-Ax" value="${Ax}" step="1"
+                   oninput="onNucleusInput(${idx}, false)" onchange="onNucleusInput(${idx}, true)"/>
+            <div class="nucleus-field-label">Ax</div>
+          </div>
+          <div class="field-group">
+            <input type="number" class="nuc-Ay" value="${Ay}" step="1"
+                   oninput="onNucleusInput(${idx}, false)" onchange="onNucleusInput(${idx}, true)"/>
+            <div class="nucleus-field-label">Ay</div>
+          </div>
+          <div class="field-group">
+            <input type="number" class="nuc-Az" value="${Az}" step="1"
+                   oninput="onNucleusInput(${idx}, false)" onchange="onNucleusInput(${idx}, true)"/>
+            <div class="nucleus-field-label">Az</div>
+          </div>
+        </div>
       </div>
-      <button class="del-btn" onclick="removeNucleus(${idx})" title="Remove ${n.symbol}">
-        <span class="material-icons-round">close</span>
-      </button>
+
+      <div class="field-group">
+        <div style="display:flex; align-items:center; justify-content:space-between;">
+          <label class="field-label" data-tip="Nuclear quadrupole tensor: Qx, Qy, Qz in MHz">Q-Tensor (Qx, Qy, Qz in MHz)</label>
+          ${n.I < 1 ? '<span style="font-size:0.62rem; color:var(--text-hint); font-style:italic;">N/A (I < 1)</span>' : ''}
+        </div>
+        <div class="field-row">
+          <div class="field-group">
+            <input type="number" class="nuc-Qx" value="${Qx}" step="0.1"
+                   ${n.I < 1 ? 'disabled style="opacity:0.45;"' : ''}
+                   oninput="onNucleusInput(${idx}, false)" onchange="onNucleusInput(${idx}, true)"/>
+            <div class="nucleus-field-label">Qx</div>
+          </div>
+          <div class="field-group">
+            <input type="number" class="nuc-Qy" value="${Qy}" step="0.1"
+                   ${n.I < 1 ? 'disabled style="opacity:0.45;"' : ''}
+                   oninput="onNucleusInput(${idx}, false)" onchange="onNucleusInput(${idx}, true)"/>
+            <div class="nucleus-field-label">Qy</div>
+          </div>
+          <div class="field-group">
+            <input type="number" class="nuc-Qz" value="${Qz}" step="0.1"
+                   ${n.I < 1 ? 'disabled style="opacity:0.45;"' : ''}
+                   oninput="onNucleusInput(${idx}, false)" onchange="onNucleusInput(${idx}, true)"/>
+            <div class="nucleus-field-label">Qz</div>
+          </div>
+        </div>
+      </div>
     `;
-    list.appendChild(row);
+    list.appendChild(tile);
   });
 }
 
@@ -309,6 +576,55 @@ function renderValidation(messages) {
 // Run simulation
 // ============================================================
 
+async function simulateSpectrumOnly() {
+  const mwFreq  = parseFloat(document.getElementById('f-mwFreq')?.value || 9.5);
+  const Bmin    = parseFloat(document.getElementById('f-Bmin')?.value   || 300);
+  const Bmax    = parseFloat(document.getElementById('f-Bmax')?.value   || 400);
+  const nPoints = parseInt(document.getElementById('f-nPoints')?.value  || 1024);
+
+  if (Bmin >= Bmax) return;
+
+  const isSingle = state.simulator === 'pepper' && state.singleOrientation;
+  try {
+    const spectrum = await POST('/api/simulate/spectrum', {
+      mwFreq, B_min: Bmin, B_max: Bmax,
+      nPoints, Harmonic: state.harmonic,
+      simulator: state.simulator,
+      method: state.method,
+      nKnots: 20,
+      singleOrientation: isSingle,
+      orientation: [state.theta, state.phi]
+    });
+    renderSpectrum(spectrum);
+    updateSpectrumBadge(spectrum);
+  } catch (e) {
+    console.warn('Spectrum update failed:', e);
+  }
+}
+
+async function simulateLevelsOnly() {
+  const mwFreq  = parseFloat(document.getElementById('f-mwFreq')?.value || 9.5);
+  const lvlBmin = parseFloat(document.getElementById('f-lvl-Bmin')?.value || 0);
+  const lvlBmax = parseFloat(document.getElementById('f-lvl-Bmax')?.value || 400);
+
+  if (lvlBmin >= lvlBmax) return;
+
+  const isSingle = state.simulator === 'pepper' && state.singleOrientation;
+  const ori = isSingle ? [state.theta, state.phi] : [0.0, 0.0];
+
+  try {
+    const levelsData = await POST('/api/simulate/levels', {
+      B_min: lvlBmin, B_max: lvlBmax, nPoints: 200,
+      method: state.method,
+      mwFreq: mwFreq,
+      orientation: ori,
+    });
+    renderLevels(levelsData);
+  } catch (e) {
+    console.warn('Levels update failed:', e);
+  }
+}
+
 async function runSimulation() {
   const btn = document.getElementById('simulate-btn');
   const icon = document.getElementById('sim-icon');
@@ -322,16 +638,26 @@ async function runSimulation() {
   const lvlBmin = parseFloat(document.getElementById('f-lvl-Bmin')?.value || 0);
   const lvlBmax = parseFloat(document.getElementById('f-lvl-Bmax')?.value || 400);
 
+  const isSingle = state.simulator === 'pepper' && state.singleOrientation;
+  const ori = isSingle ? [state.theta, state.phi] : [0.0, 0.0];
+
   try {
     // Run spectrum and levels in parallel
     const [spectrum, levelsData] = await Promise.all([
       POST('/api/simulate/spectrum', {
         mwFreq, B_min: Bmin, B_max: Bmax,
         nPoints, Harmonic: state.harmonic,
-        simulator: state.simulator, nKnots: 20
+        simulator: state.simulator,
+        method: state.method,
+        nKnots: 20,
+        singleOrientation: isSingle,
+        orientation: [state.theta, state.phi]
       }),
       POST('/api/simulate/levels', {
-        B_min: lvlBmin, B_max: lvlBmax, nPoints: 200
+        B_min: lvlBmin, B_max: lvlBmax, nPoints: 200,
+        method: state.method,
+        mwFreq: mwFreq,
+        orientation: ori,
       }),
     ]);
 
@@ -355,15 +681,15 @@ async function runSimulation() {
 const PLOTLY_LAYOUT_BASE = {
   paper_bgcolor: 'transparent',
   plot_bgcolor:  'transparent',
-  font: { family: 'Inter, sans-serif', color: '#A0AEC0', size: 11 },
+  font: { family: 'Inter, sans-serif', color: '#CBD5E1', size: 11 },
   margin: { l: 54, r: 16, t: 16, b: 48 },
   xaxis: {
-    gridcolor: '#2D3055', zerolinecolor: '#2D3055',
-    tickfont: { family: 'Roboto Mono, monospace', size: 10 },
+    gridcolor: '#334155', zerolinecolor: '#475569',
+    tickfont: { family: 'Roboto Mono, monospace', size: 10, color: '#CBD5E1' },
   },
   yaxis: {
-    gridcolor: '#2D3055', zerolinecolor: '#2D3055',
-    tickfont: { family: 'Roboto Mono, monospace', size: 10 },
+    gridcolor: '#334155', zerolinecolor: '#475569',
+    tickfont: { family: 'Roboto Mono, monospace', size: 10, color: '#CBD5E1' },
   },
 };
 
@@ -375,17 +701,21 @@ const PLOTLY_CONFIG = {
 };
 
 function renderSpectrum(data) {
+  const methodLabel = state.method === 'matrix' ? 'matrix' : 'perturb 2nd';
+  const oriLabel = (data.simulator === 'pepper' && state.singleOrientation)
+    ? ` [θ=${state.theta}°, φ=${state.phi}°]`
+    : '';
   const trace = {
     x: data.B, y: data.spc,
     type: 'scatter', mode: 'lines',
-    line: { color: '#00BCD4', width: 1.5 },
-    name: data.simulator === 'garlic' ? 'garlic()' : 'pepper()',
+    line: { color: '#00E5FF', width: 1.8 },
+    name: `${data.simulator}() [${methodLabel}]${oriLabel}`,
   };
   const layout = {
     ...PLOTLY_LAYOUT_BASE,
-    xaxis: { ...PLOTLY_LAYOUT_BASE.xaxis, title: { text: 'Magnetic Field (mT)', font: { size: 11 } } },
+    xaxis: { ...PLOTLY_LAYOUT_BASE.xaxis, title: { text: 'Magnetic Field (mT)', font: { size: 11, color: '#CBD5E1' } } },
     yaxis: { ...PLOTLY_LAYOUT_BASE.yaxis,
-      title: { text: state.harmonic === 1 ? "dI/dB" : 'Intensity', font: { size: 11 } }
+      title: { text: state.harmonic === 1 ? "dI/dB" : 'Intensity', font: { size: 11, color: '#CBD5E1' } }
     },
   };
 
@@ -400,18 +730,64 @@ function renderSpectrum(data) {
 }
 
 function renderLevels(data) {
-  const colors = ['#00BCD4','#3D5AFE','#FF5252','#FFB300','#64B5F6','#A5D6A7','#CE93D8','#FFCC80'];
+  // Okabe-Ito universal colorblind-safe palette (Wong, Nature Methods 2011)
+  const OKABE_ITO = [
+    '#56B4E9', // Sky blue
+    '#E69F00', // Orange
+    '#009E73', // Bluish green
+    '#F0E442', // Yellow
+    '#0072B2', // Dark blue
+    '#D55E00', // Vermilion
+    '#CC79A7', // Reddish purple
+    '#E2E8F0', // Off-white / light silver
+  ];
   const traces = data.E.map((row, i) => ({
     x: data.B, y: row,
     type: 'scatter', mode: 'lines',
-    line: { color: colors[i % colors.length], width: 1.2 },
+    line: { color: OKABE_ITO[i % OKABE_ITO.length], width: 1.5 },
     name: `E${i + 1}`,
+    hoverinfo: 'x+y+name',
   }));
+
+  // Render EPR transitions with high-contrast electric gold (#FFD600)
+  // Contrast ratio > 10:1 on dark background, fully distinguishable across protanopia, deuteranopia, tritanopia
+  if (data.transitions && data.transitions.length > 0) {
+    data.transitions.forEach((t) => {
+      const probPercent = (t.intensity * 100).toFixed(1);
+      const deltaE = (t.E_upper - t.E_lower).toFixed(1);
+      const opacity = Math.max(0.35, Math.min(1.0, t.intensity));
+      const width = 1.4 + 3.0 * t.intensity;
+
+      traces.push({
+        x: [t.B_res, t.B_res],
+        y: [t.E_lower, t.E_upper],
+        type: 'scatter',
+        mode: 'lines+markers',
+        marker: {
+          size: [4 + 4 * t.intensity, 4 + 4 * t.intensity],
+          color: `rgba(255, 214, 0, ${opacity.toFixed(2)})`,
+          symbol: 'circle',
+          line: { color: '#FFFFFF', width: 0.5 },
+        },
+        line: {
+          color: `rgba(255, 214, 0, ${opacity.toFixed(2)})`,
+          width: width,
+        },
+        name: `Transition E${t.lower_idx + 1}&rarr;E${t.upper_idx + 1}`,
+        hoverinfo: 'text',
+        text: `EPR Transition: E${t.lower_idx + 1} &rarr; E${t.upper_idx + 1}<br>` +
+              `Resonance Field: ${t.B_res.toFixed(2)} mT<br>` +
+              `&Delta;E: ${deltaE} MHz (${(deltaE / 1000).toFixed(3)} GHz)<br>` +
+              `Transition Probability: ${probPercent}%`,
+        showlegend: false,
+      });
+    });
+  }
 
   const layout = {
     ...PLOTLY_LAYOUT_BASE,
-    xaxis: { ...PLOTLY_LAYOUT_BASE.xaxis, title: { text: 'Magnetic Field (mT)', font: { size: 11 } } },
-    yaxis: { ...PLOTLY_LAYOUT_BASE.yaxis, title: { text: 'Energy (MHz)', font: { size: 11 } } },
+    xaxis: { ...PLOTLY_LAYOUT_BASE.xaxis, title: { text: 'Magnetic Field (mT)', font: { size: 11, color: '#CBD5E1' } } },
+    yaxis: { ...PLOTLY_LAYOUT_BASE.yaxis, title: { text: 'Energy (MHz)', font: { size: 11, color: '#CBD5E1' } } },
     showlegend: false,
   };
 
@@ -491,48 +867,93 @@ function showToast(message, type = 'info') {
 
 const PRESETS = [
   {
-    name: 'Free electron', icon: 'bolt',
-    params: { S: 0.5, g: [2.0023, 2.0023, 2.0023], D: [], nuclei: [], lw: [0.3, 0.0], simulator: "garlic", exp: { mwFreq: 9.4, Bmin: 330, Bmax: 340, nPoints: 501 } }
+    name: 'Free electron',
+    icon: 'adjust',
+    badge: 'e⁻',
+    desc: 'S = 1/2 · Free spin · g = 2.0023',
+    color: '#00BCD4',
+    params: { S: 0.5, g: [2.0023, 2.0023, 2.0023], D: [], nuclei: [], lw: [0.3, 0.0], simulator: "garlic", method: "matrix", exp: { mwFreq: 9.4, Bmin: 330, Bmax: 340, nPoints: 501 } }
   },
   {
-    name: '1 Proton', icon: 'filter_1',
-    params: { S: 0.5, g: [2.0029, 2.0029, 2.0029], D: [], nuclei: [{ isotope: "1H", A: 1430, Q: 0 }], lw: [1, 0.0], simulator: "garlic", exp: { mwFreq: 9.4, Bmin: 200, Bmax: 450, nPoints: 5001 } }
+    name: '1 Proton',
+    icon: 'hdr_strong',
+    badge: '¹H',
+    desc: 'I = 1/2 · Atomic hydrogen doublet',
+    color: '#00E5FF',
+    params: { S: 0.5, g: [2.0029, 2.0029, 2.0029], D: [], nuclei: [{ isotope: "1H", A: 1430, A_aniso: [1430, 1430, 1430], Q: 0, Q_aniso: [0, 0, 0] }], lw: [1, 0.0], simulator: "garlic", method: "matrix", exp: { mwFreq: 9.4, Bmin: 200, Bmax: 450, nPoints: 5001 } }
   },
   {
-    name: '2 Protons', icon: 'filter_2',
-    params: { S: 0.5, g: [2.0029, 2.0029, 2.0029], D: [], nuclei: [{ isotope: "1H", A: 1430, Q: 0 }, { isotope: "1H", A: 1430, Q: 0 }], lw: [1, 0.0], simulator: "garlic", exp: { mwFreq: 9.4, Bmin: 200, Bmax: 450, nPoints: 5001 } }
+    name: '2 Protons',
+    icon: 'join_inner',
+    badge: '2× ¹H',
+    desc: 'Two equivalent protons · 1:2:1 Triplet',
+    color: '#3D5AFE',
+    params: { S: 0.5, g: [2.0029, 2.0029, 2.0029], D: [], nuclei: [{ isotope: "1H", A: 1430, A_aniso: [1430, 1430, 1430], Q: 0, Q_aniso: [0, 0, 0] }, { isotope: "1H", A: 1430, A_aniso: [1430, 1430, 1430], Q: 0, Q_aniso: [0, 0, 0] }], lw: [1, 0.0], simulator: "garlic", method: "matrix", exp: { mwFreq: 9.4, Bmin: 200, Bmax: 450, nPoints: 5001 } }
   },
   {
-    name: 'Nitroxide radical', icon: 'bubble_chart',
-    params: { S: 0.5, g: [2.0083, 2.0061, 2.0022], D: [], nuclei: [{ isotope: "14N", A: 0, A_aniso: [11.2, 11.2, 92.4], Q: 0 }], lw: [0.5, 0.0], simulator: "pepper", exp: { mwFreq: 9.4, Bmin: 328, Bmax: 342, nPoints: 501 } }
+    name: 'Nitroxide radical',
+    icon: 'biotech',
+    badge: 'R₂NO•',
+    desc: '¹⁴N (I = 1) aminoxyl · 1:1:1 Triplet',
+    color: '#FF4081',
+    params: { S: 0.5, g: [2.0083, 2.0061, 2.0022], D: [], nuclei: [{ isotope: "14N", A: 38.27, A_aniso: [11.2, 11.2, 92.4], Q: 0, Q_aniso: [0, 0, 0] }], lw: [0.5, 0.0], simulator: "pepper", method: "perturb2", exp: { mwFreq: 9.4, Bmin: 328, Bmax: 342, nPoints: 501 } }
   },
   {
-    name: 'Methyl radical', icon: 'blur_on',
+    name: 'Methyl radical',
+    icon: 'hub',
+    badge: '•CH₃',
+    desc: 'Planar carbon radical · 1:3:3:1 Quartet',
+    color: '#00E676',
     params: {
       S: 0.5, g: [2.0026, 2.0026, 2.0026], D: [],
-      nuclei: [{ isotope: "1H", A: -70, Q: 0 }, { isotope: "1H", A: -70, Q: 0 }, { isotope: "1H", A: -70, Q: 0 }, { isotope: "13C", A: 105, Q: 0 }],
-      lw: [0.2, 0.0], simulator: "garlic", exp: { mwFreq: 9.4, Bmin: 325, Bmax: 345, nPoints: 501 }
+      nuclei: [
+        { isotope: "1H", A: -70, A_aniso: [-70, -70, -70], Q: 0, Q_aniso: [0, 0, 0] },
+        { isotope: "1H", A: -70, A_aniso: [-70, -70, -70], Q: 0, Q_aniso: [0, 0, 0] },
+        { isotope: "1H", A: -70, A_aniso: [-70, -70, -70], Q: 0, Q_aniso: [0, 0, 0] },
+        { isotope: "13C", A: 105, A_aniso: [105, 105, 105], Q: 0, Q_aniso: [0, 0, 0] }
+      ],
+      lw: [0.2, 0.0], simulator: "garlic", method: "matrix", exp: { mwFreq: 9.4, Bmin: 325, Bmax: 345, nPoints: 501 }
     }
   },
   {
-    name: 'Spin triplet', icon: 'grain',
-    params: { S: 1.0, g: [2.0000, 2.0000, 2.0000], D: [4496.88, 749.48], nuclei: [], lw: [10, 0.0], simulator: "pepper", exp: { mwFreq: 9.4, Bmin: 0, Bmax: 600, nPoints: 2501 } }
+    name: 'Spin triplet',
+    icon: 'height',
+    badge: 'S = 1',
+    desc: 'Parallel spins ↑↑ · Axial & rhombic ZFS',
+    color: '#7C4DFF',
+    params: { S: 1.0, g: [2.0000, 2.0000, 2.0000], D: [4496.88, 749.48], nuclei: [], lw: [10, 0.0], simulator: "pepper", method: "matrix", exp: { mwFreq: 9.4, Bmin: 0, Bmax: 600, nPoints: 2501 } }
   },
   {
-    name: 'Triplet nitrene', icon: 'scatter_plot',
-    params: { S: 1.0, g: [2.0033, 2.0033, 2.0033], D: [41041.59, 2788.07], nuclei: [], lw: [30, 0.0], simulator: "pepper", exp: { mwFreq: 94.0, Bmin: 0, Bmax: 6000, nPoints: 5001 } }
+    name: 'Triplet nitrene',
+    icon: 'whatshot',
+    badge: 'R–N:',
+    desc: 'High-field 94 GHz · Large axial ZFS',
+    color: '#FF6E40',
+    params: { S: 1.0, g: [2.0033, 2.0033, 2.0033], D: [41041.59, 2788.07], nuclei: [], lw: [30, 0.0], simulator: "pepper", method: "matrix", exp: { mwFreq: 94.0, Bmin: 0, Bmax: 6000, nPoints: 5001 } }
   },
   {
-    name: 'Triplet carbene', icon: 'toll',
-    params: { S: 1.0, g: [2.0033, 2.0033, 2.0033], D: [12258.51, 2788.07], nuclei: [], lw: [10, 0.0], simulator: "pepper", exp: { mwFreq: 9.4, Bmin: 0, Bmax: 1400, nPoints: 5001 } }
+    name: 'Triplet carbene',
+    icon: 'diamond',
+    badge: 'R₂C:',
+    desc: 'Divalent carbene · Rhombic ZFS',
+    color: '#E040FB',
+    params: { S: 1.0, g: [2.0033, 2.0033, 2.0033], D: [12258.51, 2788.07], nuclei: [], lw: [10, 0.0], simulator: "pepper", method: "matrix", exp: { mwFreq: 9.4, Bmin: 0, Bmax: 1400, nPoints: 5001 } }
   },
   {
-    name: 'Mn(III) ion', icon: 'lens',
-    params: { S: 2.0, g: [2.0000, 2.0000, 2.0000], D: [-119317.40, 0], nuclei: [], lw: [80, 0.0], simulator: "pepper", exp: { mwFreq: 240.0, Bmin: 0, Bmax: 12000, nPoints: 2501 } }
+    name: 'Mn(III) ion',
+    icon: 'hexagon',
+    badge: 'Mn³⁺',
+    desc: 'High-spin d⁴ (S = 2) · Negative ZFS',
+    color: '#FFAB00',
+    params: { S: 2.0, g: [2.0000, 2.0000, 2.0000], D: [-119317.40, 0], nuclei: [], lw: [80, 0.0], simulator: "pepper", method: "matrix", exp: { mwFreq: 240.0, Bmin: 0, Bmax: 12000, nPoints: 2501 } }
   },
   {
-    name: 'Fe(III) ion', icon: 'brightness_1',
-    params: { S: 2.5, g: [2.0000, 2.0000, 2.0000], D: [149896.23, 0], nuclei: [], lw: [20, 0.0], simulator: "pepper", exp: { mwFreq: 9.4, Bmin: 0, Bmax: 400, nPoints: 2501 } }
+    name: 'Fe(III) ion',
+    icon: 'star',
+    badge: 'Fe³⁺',
+    desc: 'High-spin d⁵ (S = 5/2) · Huge ZFS',
+    color: '#FF5252',
+    params: { S: 2.5, g: [2.0000, 2.0000, 2.0000], D: [149896.23, 0], nuclei: [], lw: [20, 0.0], simulator: "pepper", method: "matrix", exp: { mwFreq: 9.4, Bmin: 0, Bmax: 400, nPoints: 2501 } }
   }
 ];
 
@@ -543,16 +964,30 @@ function initExamples() {
   PRESETS.forEach((preset, idx) => {
     const btn = document.createElement('button');
     btn.style.cssText = `
-      display: flex; flex-direction: column; align-items: center; justify-content: center;
-      background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-md);
-      padding: 16px 8px; cursor: pointer; transition: var(--transition);
-      color: var(--text); gap: 8px;
+      display: flex; flex-direction: column; align-items: flex-start; justify-content: space-between;
+      background: var(--surface2); border: 1.5px solid var(--border); border-radius: var(--radius-md);
+      padding: 12px 10px; cursor: pointer; transition: var(--transition);
+      color: var(--text); gap: 8px; width: 100%; box-sizing: border-box; text-align: left;
     `;
-    btn.onmouseover = () => { btn.style.borderColor = 'var(--primary)'; btn.style.background = 'rgba(0,188,212,0.05)'; };
-    btn.onmouseout = () => { btn.style.borderColor = 'var(--border)'; btn.style.background = 'var(--surface2)'; };
+    btn.onmouseover = () => {
+      btn.style.borderColor = preset.color || 'var(--primary)';
+      btn.style.background = 'rgba(255,255,255,0.04)';
+      btn.style.transform = 'translateY(-2px)';
+    };
+    btn.onmouseout = () => {
+      btn.style.borderColor = 'var(--border)';
+      btn.style.background = 'var(--surface2)';
+      btn.style.transform = 'none';
+    };
     btn.innerHTML = `
-      <span class="material-icons-round" style="font-size: 32px; color: var(--accent); opacity: 0.8;">${preset.icon}</span>
-      <span style="font-size: 0.78rem; font-weight: 500; text-align: center;">${preset.name}</span>
+      <div style="display:flex; align-items:center; justify-content:space-between; width:100%;">
+        <span class="material-icons-round" style="font-size: 26px; color: ${preset.color || 'var(--accent)'};">${preset.icon}</span>
+        <span class="preset-badge" style="background:${preset.color}22; color:${preset.color}">${preset.badge}</span>
+      </div>
+      <div>
+        <div style="font-size: 0.80rem; font-weight: 700; color: var(--text); margin-bottom: 2px;">${preset.name}</div>
+        <div style="font-size: 0.66rem; color: var(--text-hint); line-height: 1.3;">${preset.desc}</div>
+      </div>
     `;
     btn.onclick = async () => {
       showToast('Loading preset: ' + preset.name);
@@ -579,7 +1014,31 @@ async function loadPreset(idx) {
   if(document.getElementById('f-Bmax')) document.getElementById('f-Bmax').value = p.params.exp.Bmax;
   if(document.getElementById('f-nPoints')) document.getElementById('f-nPoints').value = p.params.exp.nPoints;
 
+  const mwSummary = document.getElementById('mw-summary');
+  if (mwSummary) mwSummary.textContent = `${p.params.exp.mwFreq.toFixed(2)} GHz · ${p.params.exp.Bmin}–${p.params.exp.Bmax} mT`;
+
+  if(document.getElementById('f-lvl-Bmin')) document.getElementById('f-lvl-Bmin').value = 0;
+  if(document.getElementById('f-lvl-Bmax')) document.getElementById('f-lvl-Bmax').value = p.params.exp.Bmax;
+  const lvlSummary = document.getElementById('levels-summary');
+  if (lvlSummary) lvlSummary.textContent = `0–${p.params.exp.Bmax} mT · 200 pts`;
+
+  // Reset orientation controls
+  state.singleOrientation = false;
+  state.theta = 0.0;
+  state.phi = 0.0;
+  const chkOri = document.getElementById('chk-single-orientation');
+  if (chkOri) chkOri.checked = false;
+  const oriCtrl = document.getElementById('ori-controls');
+  if (oriCtrl) oriCtrl.style.display = 'none';
+  const thetaEl = document.getElementById('f-theta');
+  if (thetaEl) thetaEl.value = 0.0;
+  const phiEl = document.getElementById('f-phi');
+  if (phiEl) phiEl.value = 0.0;
+  updateOrientationPresetButtons('Z');
+  updateOrientationSummary();
+
   setSimulator(p.params.simulator);
+  setModel(p.params.method || 'matrix', false);
 
   try {
     await PUT('/api/system', {
@@ -596,16 +1055,26 @@ async function loadPreset(idx) {
       await POST('/api/system/nuclei', {
         symbol: n.isotope,
         A: n.A,
-        A_aniso: n.A_aniso || null,
+        A_aniso: n.A_aniso || (n.A != null ? [n.A, n.A, n.A] : null),
         Q: n.Q || 0,
+        Q_aniso: n.Q_aniso || (n.Q != null ? [n.Q, n.Q, n.Q] : [0, 0, 0]),
         label: null
       });
+    }
+
+    // Ensure Nuclei card is expanded if preset has nuclei
+    const nucCard = document.getElementById('card-nuclei');
+    if (nucCard && p.params.nuclei && p.params.nuclei.length > 0) {
+      nucCard.classList.remove('collapsed');
     }
     
     await refreshSystem();
     const tabParams = document.getElementById('tab-params');
     if (tabParams) tabParams.click();
     showToast(p.name + ' loaded successfully!', 'success');
+    
+    // Automatically simulate loaded preset
+    runSimulation();
   } catch (e) {
     showToast('Failed to load preset: ' + e.message, 'error');
   }

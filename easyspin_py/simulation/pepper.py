@@ -127,6 +127,79 @@ def _find_resonance_fields(
 
 
 # ---------------------------------------------------------------------------
+# Second-order perturbation theory resonance fields for S=1/2
+# ---------------------------------------------------------------------------
+
+def _resonance_fields_perturb2_orientation(
+    sys: SpinSystem,
+    B_dir: np.ndarray,
+    mw_freq_MHz: float,
+) -> np.ndarray:
+    """
+    Compute 2nd-order perturbation theory resonance fields for S=1/2 along B_dir.
+    Accurately accounts for g-anisotropy, hyperfine anisotropy, and Breit-Rabi shifts.
+    """
+    g_arr = sys.g.flatten()
+    if len(g_arr) == 1:
+        gx, gy, gz = g_arr[0], g_arr[0], g_arr[0]
+    elif len(g_arr) == 3:
+        gx, gy, gz = g_arr[0], g_arr[1], g_arr[2]
+    else:
+        gx, gy, gz = g_arr[0], g_arr[4], g_arr[8]
+
+    # Effective g along B_dir
+    ux, uy, uz = B_dir
+    g_eff = float(np.sqrt((gx * ux)**2 + (gy * uy)**2 + (gz * uz)**2))
+    if g_eff <= 0:
+        return np.array([])
+
+    wx = gx * ux / g_eff
+    wy = gy * uy / g_eff
+    wz = gz * uz / g_eff
+
+    from easyspin_py.core.constants import bmagn, planck
+    gB_factor = g_eff * bmagn / planck / 1e9  # MHz/mT
+
+    if sys.nNuclei == 0:
+        return np.array([mw_freq_MHz / gB_factor])
+
+    A_eff_list = []
+    A_perp_sq_list = []
+    I_list = []
+
+    for nuc in sys.nuclei:
+        if nuc.I == 0:
+            continue
+        I_list.append(nuc.I)
+        A_diag = np.diag(nuc.A_eff)
+        Ax, Ay, Az = float(A_diag[0]), float(A_diag[1]), float(A_diag[2])
+        A_k = float(np.sqrt((Ax * wx)**2 + (Ay * wy)**2 + (Az * wz)**2))
+        A_eff_list.append(A_k)
+        A_perp_sq = 0.5 * max(0.0, (Ax**2 + Ay**2 + Az**2) - A_k**2)
+        A_perp_sq_list.append(A_perp_sq)
+
+    if len(I_list) == 0:
+        return np.array([mw_freq_MHz / gB_factor])
+
+    from itertools import product
+    grids = [np.arange(-I, I + 1) for I in I_list]
+    combos = list(product(*grids))
+
+    res_fields = []
+    for mi_tuple in combos:
+        hfi_1st = sum(A_eff_list[k] * mi_tuple[k] for k in range(len(I_list)))
+        hfi_2nd = sum(
+            (A_perp_sq_list[k] / (2.0 * mw_freq_MHz)) * (I_list[k] * (I_list[k] + 1) - mi_tuple[k]**2)
+            for k in range(len(I_list))
+        )
+        nu_0 = mw_freq_MHz - hfi_1st - hfi_2nd
+        B_res = nu_0 / gB_factor
+        res_fields.append(B_res)
+
+    return np.array(res_fields)
+
+
+# ---------------------------------------------------------------------------
 # Lineshape broadening
 # ---------------------------------------------------------------------------
 
@@ -215,29 +288,57 @@ def pepper(
     # Internal B sweep for eigenvalue tracking
     B_internal = np.linspace(B_range[0], B_range[1], n_B)
 
-    # Precompute field-independent operators
-    H0, mux, muy, muz = ham(sys)
+    method = str(exp.get('method', opt.get('method', 'matrix'))).lower()
+    use_perturb2 = (method in ('perturb2', 'perturb') and len(sys.S) == 1 and sys.S[0] == 0.5)
 
-    # Powder orientation grid
-    thetas, phis, grid_weights = _make_powder_grid(n_theta, n_phi)
+    # Precompute field-independent operators if doing matrix diagonalization
+    if not use_perturb2:
+        H0, mux, muy, muz = ham(sys)
+
+    # Check for single orientation mode
+    single_ori = bool(exp.get('singleOrientation', opt.get('singleOrientation', False)))
+    ori_angles = exp.get('orientation', opt.get('orientation', exp.get('Orientation', None)))
 
     spc = np.zeros(n_points)
     all_B_res = []
     all_weights = []
 
-    for i_theta, theta in enumerate(thetas):
-        for i_phi, phi in enumerate(phis):
-            B_dir = _B_direction(theta, phi)
-            w = grid_weights[i_theta, i_phi]
+    if single_ori and ori_angles is not None and len(ori_angles) >= 2:
+        # Single crystal / orientation calculation
+        theta_rad = np.radians(float(ori_angles[0]))
+        phi_rad = np.radians(float(ori_angles[1]))
+        B_dir = _B_direction(theta_rad, phi_rad)
 
+        if use_perturb2:
+            B_res = _resonance_fields_perturb2_orientation(sys, B_dir, mw_freq_MHz)
+        else:
             B_res = _find_resonance_fields(
                 sys, B_dir, mw_freq_MHz, B_internal,
                 H0, mux, muy, muz
             )
+        for B0 in B_res:
+            all_B_res.append(B0)
+            all_weights.append(1.0)
+    else:
+        # Powder orientation grid
+        thetas, phis, grid_weights = _make_powder_grid(n_theta, n_phi)
 
-            for B0 in B_res:
-                all_B_res.append(B0)
-                all_weights.append(w)
+        for i_theta, theta in enumerate(thetas):
+            for i_phi, phi in enumerate(phis):
+                B_dir = _B_direction(theta, phi)
+                w = grid_weights[i_theta, i_phi]
+
+                if use_perturb2:
+                    B_res = _resonance_fields_perturb2_orientation(sys, B_dir, mw_freq_MHz)
+                else:
+                    B_res = _find_resonance_fields(
+                        sys, B_dir, mw_freq_MHz, B_internal,
+                        H0, mux, muy, muz
+                    )
+
+                for B0 in B_res:
+                    all_B_res.append(B0)
+                    all_weights.append(w)
 
     if len(all_B_res) > 0:
         all_B_res = np.array(all_B_res)

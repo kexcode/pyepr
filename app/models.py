@@ -15,6 +15,7 @@ class NucleusRequest(BaseModel):
     A: float = Field(0.0, description="Isotropic HFI coupling in MHz")
     A_aniso: Optional[List[float]] = Field(None, description="Anisotropic [Axx,Ayy,Azz] in MHz")
     Q: float = Field(0.0, description="Nuclear quadrupole coupling in MHz")
+    Q_aniso: Optional[List[float]] = Field(None, description="Anisotropic [Qxx,Qyy,Qzz] in MHz")
     label: Optional[str] = Field(None, description="User label, e.g. 'alpha-H'")
 
 
@@ -58,19 +59,34 @@ class ExperimentParams(BaseModel):
     nPoints: int = Field(1024, description="Number of spectrum points")
     Harmonic: int = Field(1, description="0 = absorption, 1 = first derivative")
     simulator: str = Field("garlic", description="'garlic' or 'pepper'")
+    method: str = Field("matrix", description="Simulation model: 'matrix' or 'perturb2'")
     # pepper-specific
     nKnots: int = Field(20, description="Powder averaging knots (pepper only)")
+    singleOrientation: bool = Field(False, description="Whether to simulate single orientation instead of powder")
+    orientation: List[float] = Field([0.0, 0.0], description="Orientation angles [theta, phi] in degrees")
 
 
 class LevelsParams(BaseModel):
     B_min: float = Field(0.0, description="Minimum field in mT")
     B_max: float = Field(400.0, description="Maximum field in mT")
     nPoints: int = Field(200, description="Number of field points")
+    method: str = Field("matrix", description="Simulation model: 'matrix' or 'perturb2'")
+    mwFreq: Optional[float] = Field(9.5, description="Microwave frequency in GHz for transition calculation")
+    orientation: Optional[List[float]] = Field([0.0, 0.0], description="Field direction [theta, phi] in degrees")
 
 
 # ---------------------------------------------------------------------------
 # Responses
 # ---------------------------------------------------------------------------
+
+class TransitionInfo(BaseModel):
+    B_res: float = Field(..., description="Resonance field in mT")
+    E_lower: float = Field(..., description="Energy of lower state in MHz")
+    E_upper: float = Field(..., description="Energy of upper state in MHz")
+    lower_idx: int = Field(..., description="Index of lower state (0-based)")
+    upper_idx: int = Field(..., description="Index of upper state (0-based)")
+    intensity: float = Field(..., description="Relative transition probability (0 to 1)")
+
 
 class SpectrumResponse(BaseModel):
     B: List[float]
@@ -83,6 +99,7 @@ class SpectrumResponse(BaseModel):
 class LevelsResponse(BaseModel):
     B: List[float]
     E: List[List[float]]       # shape: [n_states][n_points]
+    transitions: List[TransitionInfo] = Field(default_factory=list)
     validation: Dict[str, Any]
 
 

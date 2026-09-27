@@ -46,6 +46,7 @@ class Nucleus:
     A: float = 0.0
     A_aniso: Optional[List[float]] = None   # [Axx, Ayy, Azz] in MHz
     Q: float = 0.0
+    Q_aniso: Optional[List[float]] = None   # [Qxx, Qyy, Qzz] in MHz
     label: Optional[str] = None
 
     # Cached isotope properties (set on first access or at construction)
@@ -73,7 +74,7 @@ class Nucleus:
         Effective 3x3 A tensor in MHz.
         Uses A_aniso if given, otherwise isotropic A on the diagonal.
         """
-        if self.A_aniso is not None:
+        if self.A_aniso is not None and len(self.A_aniso) == 3:
             return np.diag(self.A_aniso)
         return np.diag([self.A, self.A, self.A])
 
@@ -84,12 +85,27 @@ class Nucleus:
             return 0.0
         return self.Q
 
+    @property
+    def Q_mat(self) -> np.ndarray:
+        """3x3 Q matrix in MHz (traceless, 0 for I < 1)."""
+        if self.I < 1:
+            return np.zeros((3, 3))
+        if self.Q_aniso is not None and len(self.Q_aniso) == 3:
+            return np.diag(self.Q_aniso)
+        q = self.Q
+        return np.diag([-q / 3.0, -q / 3.0, 2.0 * q / 3.0])
+
     def to_dict(self) -> dict:
+        a_aniso = self.A_aniso if self.A_aniso is not None else [self.A, self.A, self.A]
+        q_aniso = self.Q_aniso if self.Q_aniso is not None else (
+            [-round(self.Q / 3.0, 4), -round(self.Q / 3.0, 4), round(2.0 * self.Q / 3.0, 4)] if self.I >= 1 else [0.0, 0.0, 0.0]
+        )
         return {
             "symbol": self.symbol,
             "A": self.A,
-            "A_aniso": self.A_aniso,
+            "A_aniso": a_aniso,
             "Q": self.Q,
+            "Q_aniso": q_aniso,
             "label": self.label,
             "I": self.I,
             "gn": self.gn,
@@ -214,6 +230,7 @@ class SpinSystem:
         A: float = 0.0,
         A_aniso: Optional[List[float]] = None,
         Q: float = 0.0,
+        Q_aniso: Optional[List[float]] = None,
         label: Optional[str] = None,
     ) -> Nucleus:
         """
@@ -229,6 +246,8 @@ class SpinSystem:
             Anisotropic [Axx, Ayy, Azz] values in MHz.
         Q : float
             Quadrupole coupling in MHz (only used for I >= 1).
+        Q_aniso : list of 3 floats, optional
+            Anisotropic [Qxx, Qyy, Qzz] values in MHz.
         label : str, optional
             User label for the nucleus.
 
@@ -242,7 +261,7 @@ class SpinSystem:
         ValueError
             If `symbol` is not found in the isotope database.
         """
-        nuc = Nucleus(symbol=symbol, A=A, A_aniso=A_aniso, Q=Q, label=label)
+        nuc = Nucleus(symbol=symbol, A=A, A_aniso=A_aniso, Q=Q, Q_aniso=Q_aniso, label=label)
         self.nuclei.append(nuc)
         return nuc
 
@@ -346,6 +365,7 @@ class SpinSystem:
                 A=n.get("A", 0.0),
                 A_aniso=n.get("A_aniso"),
                 Q=n.get("Q", 0.0),
+                Q_aniso=n.get("Q_aniso"),
                 label=n.get("label"),
             )
             for n in data.get("nuclei", [])

@@ -91,10 +91,137 @@ def test_simulate_levels():
     payload = {
         "B_min": 0.0,
         "B_max": 350.0,
-        "nPoints": 50
+        "nPoints": 50,
+        "method": "matrix",
+        "mwFreq": 9.5
     }
     response = client.post("/api/simulate/levels", json=payload)
     assert response.status_code == 200
     data = response.json()
     assert len(data["B"]) == 50
     assert len(data["E"]) > 0
+    assert "transitions" in data
+    # At 9.5 GHz and 0-350 mT for free electron / standard system, transition is present
+    if len(data["transitions"]) > 0:
+        t = data["transitions"][0]
+        assert "B_res" in t
+        assert "E_lower" in t
+        assert "E_upper" in t
+        assert "intensity" in t
+        assert 0.0 <= t["intensity"] <= 1.0
+
+
+def test_simulation_methods():
+    for method in ["matrix", "perturb1", "perturb2"]:
+        # Spectrum
+        spc_resp = client.post("/api/simulate/spectrum", json={
+            "simulator": "garlic",
+            "mwFreq": 9.5,
+            "B_min": 330.0,
+            "B_max": 345.0,
+            "nPoints": 128,
+            "Harmonic": 0,
+            "method": method
+        })
+        assert spc_resp.status_code == 200, f"Method {method} failed for spectrum"
+        assert len(spc_resp.json()["spc"]) == 128
+
+        # Levels
+        lvl_resp = client.post("/api/simulate/levels", json={
+            "B_min": 0.0,
+            "B_max": 400.0,
+            "nPoints": 50,
+            "method": method,
+            "mwFreq": 9.5
+        })
+        assert lvl_resp.status_code == 200, f"Method {method} failed for levels"
+        assert len(lvl_resp.json()["E"]) > 0
+
+
+def test_orientation_simulation_api():
+    # Test pepper single orientation via API
+    resp = client.post("/api/simulate/spectrum", json={
+        "simulator": "pepper",
+        "mwFreq": 9.5,
+        "B_min": 300.0,
+        "B_max": 350.0,
+        "nPoints": 128,
+        "Harmonic": 1,
+        "method": "matrix",
+        "singleOrientation": True,
+        "orientation": [90.0, 0.0]
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["spc"]) == 128
+
+    # Test levels with orientation via API
+    lvl_resp = client.post("/api/simulate/levels", json={
+        "B_min": 0.0,
+        "B_max": 400.0,
+        "nPoints": 50,
+        "method": "matrix",
+        "mwFreq": 9.5,
+        "orientation": [90.0, 90.0]
+    })
+    assert lvl_resp.status_code == 200
+    lvl_data = lvl_resp.json()
+    assert len(lvl_data["E"]) > 0
+    assert "transitions" in lvl_data
+
+
+def test_nucleus_tensor_update_and_perturb2_api():
+    # Reset system
+    client.put("/api/system", json={
+        "S": 0.5,
+        "g": [2.0083, 2.0061, 2.0022],
+        "D": [],
+        "lw": [0.5],
+        "tcorr": None
+    })
+    client.delete("/api/system/nuclei")
+
+    # Add 14N
+    add_resp = client.post("/api/system/nuclei", json={
+        "symbol": "14N",
+        "A": 38.27,
+        "A_aniso": [11.2, 11.2, 92.4],
+        "Q": 0.0,
+        "Q_aniso": [0.0, 0.0, 0.0]
+    })
+    assert add_resp.status_code == 200
+    nucs = add_resp.json()["nuclei"]
+    assert len(nucs) == 1
+    assert nucs[0]["A_aniso"] == [11.2, 11.2, 92.4]
+
+    # Update via PUT /api/system/nuclei/0
+    put_resp = client.put("/api/system/nuclei/0", json={
+        "symbol": "14N",
+        "A": 38.27,
+        "A_aniso": [11.5, 11.5, 93.0],
+        "Q": 1.0,
+        "Q_aniso": [-0.5, -0.5, 1.0]
+    })
+    assert put_resp.status_code == 200
+    updated_nucs = put_resp.json()["nuclei"]
+    assert updated_nucs[0]["A_aniso"] == [11.5, 11.5, 93.0]
+    assert updated_nucs[0]["Q_aniso"] == [-0.5, -0.5, 1.0]
+
+    # Run pepper with perturb2 method
+    sim_resp = client.post("/api/simulate/spectrum", json={
+        "simulator": "pepper",
+        "mwFreq": 9.4,
+        "B_min": 328.0,
+        "B_max": 342.0,
+        "nPoints": 256,
+        "Harmonic": 1,
+        "method": "perturb2",
+        "singleOrientation": False
+    })
+    assert sim_resp.status_code == 200
+    sim_data = sim_resp.json()
+    assert len(sim_data["spc"]) == 256
+    import numpy as np
+    assert np.max(np.abs(sim_data["spc"])) > 0, "Perturbation theory produced zero spectrum"
+
+

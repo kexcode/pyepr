@@ -83,29 +83,33 @@ def _deriv_gaussian(x: np.ndarray, x0: float, fwhm: float) -> np.ndarray:
 # Resonance field calculation (first-order perturbation theory)
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Resonance field calculation (perturbation and matrix methods)
+# ---------------------------------------------------------------------------
+
 def _resonance_fields_perturbation(
     sys: SpinSystem,
     mw_freq_GHz: float,
+    order: int = 1,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Calculate resonance fields (mT) and relative intensities using
-    first-order perturbation theory.
-
-    For S=1/2, the EPR transition |mS=-1/2> <-> |mS=+1/2> occurs at:
-        B_res = (h*nu - sum(mI_k * A_k)) / (g * bmagn)
+    perturbation theory (1st or 2nd order).
 
     Parameters
     ----------
     sys : SpinSystem
     mw_freq_GHz : float
         Microwave frequency in GHz.
+    order : int
+        1 for first-order perturbation, 2 for second-order (Breit-Rabi shift).
 
     Returns
     -------
     B_res : ndarray
         Resonance fields in mT.
     intensities : ndarray
-        Relative intensities (1 for each allowed transition).
+        Relative intensities.
     """
     if len(sys.S) != 1 or sys.S[0] != 0.5:
         raise NotImplementedError(
@@ -155,10 +159,87 @@ def _resonance_fields_perturbation(
 
     for idx, mi_vals in enumerate(mi_combos):
         # First-order shift from all nuclei
-        dE = np.sum(A_iso * mi_vals)  # MHz
-        B_res[idx] = (mw_freq_MHz - dE) / gB_factor  # mT
+        dE_1 = np.sum(A_iso * mi_vals)  # MHz
+        dE_2 = 0.0
+        if order >= 2:
+            # Breit-Rabi 2nd order shift: Delta E_2 = sum_k (A_k^2 / (2 * nu0)) * (I_k*(I_k+1) - m_I^2)
+            dE_2 = np.sum((A_iso ** 2 / (2.0 * mw_freq_MHz)) * (sys.I * (sys.I + 1.0) - mi_vals ** 2))
+
+        B_res[idx] = (mw_freq_MHz - dE_1 - dE_2) / gB_factor  # mT
 
     return B_res, intensities
+
+
+def _resonance_fields_matrix(
+    sys: SpinSystem,
+    mw_freq_GHz: float,
+    B_range: Tuple[float, float],
+    n_B: int = 300,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Calculate resonance fields (mT) and transition probabilities using
+    exact matrix diagonalization for isotropic solution systems.
+    """
+    import scipy.linalg
+    from easyspin_py.hamiltonian.builder import ham
+
+    mw_freq_MHz = mw_freq_GHz * 1e3
+    n_states = sys.hsdim()
+
+    # Precompute field-independent H0 and magnetic moment operators
+    H0, mux, muy, muz = ham(sys)
+
+    # Internal B sweep spanning slightly beyond the target range
+    b_margin = max(10.0, (B_range[1] - B_range[0]) * 0.1)
+    b_min_sweep = max(0.0, B_range[0] - b_margin)
+    b_max_sweep = B_range[1] + b_margin
+    B_vals = np.linspace(b_min_sweep, b_max_sweep, n_B)
+
+    # Compute eigenvalues at each field point (along z for isotropic)
+    E = np.zeros((n_states, n_B))
+    for k, B_mag in enumerate(B_vals):
+        H = H0 - B_mag * muz
+        E[:, k] = scipy.linalg.eigvalsh(H.toarray())
+
+    # Find crossings where E_j(B) - E_i(B) = mw_freq_MHz
+    res_fields = []
+    res_weights = []
+
+    for i in range(n_states):
+        for j in range(i + 1, n_states):
+            gap = E[j] - E[i]
+            diff = gap - mw_freq_MHz
+            sign_changes = np.where(np.diff(np.sign(diff)))[0]
+            for k in sign_changes:
+                d0, d1 = diff[k], diff[k + 1]
+                B0, B1 = B_vals[k], B_vals[k + 1]
+                B_res = B0 + (B1 - B0) * (-d0) / (d1 - d0)
+
+                # Compute transition probability at B_res
+                H_res = H0 - B_res * muz
+                evals, evecs = scipy.linalg.eigh(H_res.toarray())
+                ui = evecs[:, i]
+                uj = evecs[:, j]
+
+                # Transition dipole matrix element: |<i|mux|j>|^2 + |<i|muy|j>|^2
+                mx = np.abs(ui.conj().T @ mux.toarray() @ uj) ** 2
+                my = np.abs(ui.conj().T @ muy.toarray() @ uj) ** 2
+                prob = float(mx + my)
+
+                res_fields.append(B_res)
+                res_weights.append(prob)
+
+    if len(res_fields) == 0:
+        # Fallback to perturbation if no crossings found in window
+        return _resonance_fields_perturbation(sys, mw_freq_GHz, order=1)
+
+    res_fields = np.array(res_fields)
+    res_weights = np.array(res_weights)
+    max_w = np.max(res_weights)
+    if max_w > 0:
+        res_weights = res_weights / max_w
+
+    return res_fields, res_weights
 
 
 # ---------------------------------------------------------------------------
@@ -177,18 +258,15 @@ def garlic(
     ----------
     sys : SpinSystem
         Spin system with g, Nucs, A, lw (linewidth in mT).
-        lw can be:
-          - scalar: Gaussian FWHM
-          - [lG]:   Gaussian FWHM only
-          - [lG, lL]: Gaussian and Lorentzian FWHM (Voigt approximation)
     exp : dict
         Experiment parameters:
           - 'mwFreq'   : microwave frequency in GHz (default 9.5)
           - 'Range'    : [B_min, B_max] in mT (default [300, 400])
           - 'nPoints'  : number of spectrum points (default 1024)
           - 'Harmonic' : 0 = absorption, 1 = first derivative (default 1)
+          - 'method'   : 'matrix', 'perturb1', or 'perturb2' (default 'matrix')
     opt : dict, optional
-        Additional options (currently unused, for future expansion).
+        Options dictionary (supports 'method' or 'Method').
 
     Returns
     -------
@@ -213,6 +291,9 @@ def garlic(
     n_points = int(exp.get('nPoints', 1024))
     harmonic = int(exp.get('Harmonic', 1))
 
+    # Parse simulation method ('matrix', 'perturb1', 'perturb2')
+    method = opt.get('Method', opt.get('method', exp.get('method', 'matrix'))).lower()
+
     # Parse linewidth
     lw = np.atleast_1d(sys.lw).flatten()
     lw_gauss = float(lw[0]) if len(lw) >= 1 else 0.3
@@ -222,8 +303,13 @@ def garlic(
     B = np.linspace(B_range[0], B_range[1], n_points)
     spc = np.zeros(n_points)
 
-    # Compute resonance fields
-    B_res, intensities = _resonance_fields_perturbation(sys, mw_freq)
+    # Compute resonance fields according to chosen model
+    if method in ('perturb1', 'first_order', 'first'):
+        B_res, intensities = _resonance_fields_perturbation(sys, mw_freq, order=1)
+    elif method in ('perturb2', 'second_order', 'second'):
+        B_res, intensities = _resonance_fields_perturbation(sys, mw_freq, order=2)
+    else:  # 'matrix' / exact
+        B_res, intensities = _resonance_fields_matrix(sys, mw_freq, (B_range[0], B_range[1]))
 
     # Accumulate lineshapes
     for B0, weight in zip(B_res, intensities):
