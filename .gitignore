@@ -55,4 +55,6 @@ __pycache__/
 *.pyd
 *.egg-info/
 dist/
-build/
+build/
+.pytest_cache/
+
