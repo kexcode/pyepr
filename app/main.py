@@ -241,6 +241,7 @@ def simulate_spectrum(params: ExperimentParams):
         "method": params.method,
         "singleOrientation": params.singleOrientation,
         "orientation": params.orientation,
+        "return_both": True,
     }
 
     # Run validation first (collect messages without stopping)
@@ -257,15 +258,18 @@ def simulate_spectrum(params: ExperimentParams):
         with warnings.catch_warnings(record=True):
             warnings.simplefilter("always")
             if params.simulator == "garlic":
-                B, spc = garlic(sys, exp, opt)
+                B, spc_abs, spc_deriv = garlic(sys, exp, opt)
             else:
-                B, spc = pepper(sys, exp, opt)
+                B, spc_abs, spc_deriv = pepper(sys, exp, opt)
+            spc = spc_deriv if params.Harmonic != 0 else spc_abs
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
     return SpectrumResponse(
         B=B.tolist(),
         spc=spc.tolist(),
+        spc_abs=spc_abs.tolist(),
+        spc_deriv=spc_deriv.tolist(),
         simulator=params.simulator,
         mwFreq=params.mwFreq,
         validation=val_result.to_dict(),

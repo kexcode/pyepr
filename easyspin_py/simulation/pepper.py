@@ -203,6 +203,29 @@ def _resonance_fields_perturb2_orientation(
 # Lineshape broadening
 # ---------------------------------------------------------------------------
 
+def _gaussian_broaden_both(
+    B_axis: np.ndarray,
+    B_res_list: np.ndarray,
+    weights: np.ndarray,
+    lw_gauss: float,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Accumulate Gaussian-broadened sticks onto B_axis for both absorption and 1st derivative."""
+    spc_abs = np.zeros(len(B_axis))
+    spc_deriv = np.zeros(len(B_axis))
+    if lw_gauss <= 0 or len(B_res_list) == 0:
+        return spc_abs, spc_deriv
+    sigma = lw_gauss / (2.0 * np.sqrt(2.0 * np.log(2.0)))
+    inv_sigma2 = 1.0 / (sigma ** 2)
+
+    for B0, w in zip(B_res_list, weights):
+        diff = B_axis - B0
+        gauss = w * np.exp(-0.5 * (diff / sigma) ** 2)
+        spc_abs += gauss
+        spc_deriv += -diff * inv_sigma2 * gauss
+
+    return spc_abs, spc_deriv
+
+
 def _gaussian_broaden(
     B_axis: np.ndarray,
     B_res_list: np.ndarray,
@@ -211,18 +234,8 @@ def _gaussian_broaden(
     harmonic: int,
 ) -> np.ndarray:
     """Accumulate Gaussian-broadened sticks onto B_axis."""
-    spc = np.zeros(len(B_axis))
-    if lw_gauss <= 0:
-        return spc
-    sigma = lw_gauss / (2.0 * np.sqrt(2.0 * np.log(2.0)))
-
-    for B0, w in zip(B_res_list, weights):
-        if harmonic == 0:
-            spc += w * np.exp(-0.5 * ((B_axis - B0) / sigma) ** 2)
-        else:
-            spc += w * -(B_axis - B0) / sigma ** 2 * np.exp(-0.5 * ((B_axis - B0) / sigma) ** 2)
-
-    return spc
+    spc_abs, spc_deriv = _gaussian_broaden_both(B_axis, B_res_list, weights, lw_gauss)
+    return spc_deriv if harmonic != 0 else spc_abs
 
 
 # ---------------------------------------------------------------------------
@@ -340,9 +353,15 @@ def pepper(
                     all_B_res.append(B0)
                     all_weights.append(w)
 
+    return_both = bool(opt.get('return_both', exp.get('return_both', False)))
+
+    spc_abs = np.zeros(n_points)
+    spc_deriv = np.zeros(n_points)
     if len(all_B_res) > 0:
         all_B_res = np.array(all_B_res)
         all_weights = np.array(all_weights)
-        spc = _gaussian_broaden(B_axis, all_B_res, all_weights, lw_gauss, harmonic)
+        spc_abs, spc_deriv = _gaussian_broaden_both(B_axis, all_B_res, all_weights, lw_gauss)
 
-    return B_axis, spc
+    if return_both:
+        return B_axis, spc_abs, spc_deriv
+    return B_axis, (spc_deriv if harmonic != 0 else spc_abs)

@@ -91,6 +91,8 @@ class TransitionInfo(BaseModel):
 class SpectrumResponse(BaseModel):
     B: List[float]
     spc: List[float]
+    spc_abs: Optional[List[float]] = None
+    spc_deriv: Optional[List[float]] = None
     simulator: str
     mwFreq: float
     validation: Dict[str, Any]

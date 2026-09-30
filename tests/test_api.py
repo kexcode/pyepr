@@ -221,7 +221,36 @@ def test_nucleus_tensor_update_and_perturb2_api():
     assert sim_resp.status_code == 200
     sim_data = sim_resp.json()
     assert len(sim_data["spc"]) == 256
+    assert "spc_abs" in sim_data and sim_data["spc_abs"] is not None
+    assert "spc_deriv" in sim_data and sim_data["spc_deriv"] is not None
+    assert len(sim_data["spc_abs"]) == 256
+    assert len(sim_data["spc_deriv"]) == 256
     import numpy as np
     assert np.max(np.abs(sim_data["spc"])) > 0, "Perturbation theory produced zero spectrum"
+    assert np.max(np.abs(sim_data["spc_abs"])) > 0, "Absorption spectrum is zero"
+    assert np.max(np.abs(sim_data["spc_deriv"])) > 0, "Derivative spectrum is zero"
+
+
+def test_garlic_dual_harmonic_simulation():
+    # Test garlic returns both spc_abs and spc_deriv simultaneously
+    resp = client.post("/api/simulate/spectrum", json={
+        "simulator": "garlic",
+        "mwFreq": 9.5,
+        "B_min": 330.0,
+        "B_max": 345.0,
+        "nPoints": 501,
+        "Harmonic": 1,
+        "method": "matrix"
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["B"]) == 501
+    assert len(data["spc"]) == 501
+    assert len(data["spc_abs"]) == 501
+    assert len(data["spc_deriv"]) == 501
+    import numpy as np
+    assert np.max(np.abs(data["spc_abs"])) > 0
+    assert np.max(np.abs(data["spc_deriv"])) > 0
+
 
 

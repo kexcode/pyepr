@@ -252,6 +252,9 @@ function setHarmonic(h) {
   state.harmonic = h;
   document.getElementById('btn-absorption').classList.toggle('active', h === 0);
   document.getElementById('btn-derivative').classList.toggle('active', h === 1);
+  if (state.currentSpectrumData) {
+    renderSpectrum(state.currentSpectrumData);
+  }
 }
 
 // ============================================================
@@ -265,7 +268,7 @@ function bindInputListeners() {
     if (el) el.addEventListener('change', push);
   });
 
-  // Active Bmin/Bmax listeners for immediate plot adjustment
+  // Active Bmin/Bmax/nPoints listeners for immediate plot adjustment
   bindActiveFieldListeners();
 
   // Orientation angle inputs
@@ -291,9 +294,10 @@ function onFieldParamsChange(immediate = false) {
   const mwFreq = parseFloat(document.getElementById('f-mwFreq')?.value || 9.5);
   const Bmin = parseFloat(document.getElementById('f-Bmin')?.value || 300);
   const Bmax = parseFloat(document.getElementById('f-Bmax')?.value || 400);
+  const nPoints = parseInt(document.getElementById('f-nPoints')?.value || 1024);
 
   const mwSummary = document.getElementById('mw-summary');
-  if (mwSummary) mwSummary.textContent = `${mwFreq.toFixed(2)} GHz · ${Bmin}–${Bmax} mT`;
+  if (mwSummary) mwSummary.textContent = `${mwFreq.toFixed(2)} GHz · ${Bmin}–${Bmax} mT · ${nPoints} pts`;
 
   if (Bmin >= Bmax) return;
 
@@ -326,8 +330,9 @@ function bindActiveFieldListeners() {
   const bminEl = document.getElementById('f-Bmin');
   const bmaxEl = document.getElementById('f-Bmax');
   const mwFreqEl = document.getElementById('f-mwFreq');
+  const nPointsEl = document.getElementById('f-nPoints');
 
-  [bminEl, bmaxEl, mwFreqEl].forEach(el => {
+  [bminEl, bmaxEl, mwFreqEl, nPointsEl].forEach(el => {
     if (!el) return;
     el.addEventListener('input', () => onFieldParamsChange(false));
     el.addEventListener('change', () => onFieldParamsChange(true));
@@ -701,15 +706,21 @@ const PLOTLY_CONFIG = {
 };
 
 function renderSpectrum(data) {
+  state.currentSpectrumData = data;
+  const yData = (state.harmonic === 0 && data.spc_abs)
+    ? data.spc_abs
+    : (data.spc_deriv || data.spc);
+
   const methodLabel = state.method === 'matrix' ? 'matrix' : 'perturb 2nd';
-  const oriLabel = (data.simulator === 'pepper' && state.singleOrientation)
+  const simName = data.simulator || state.simulator;
+  const oriLabel = (simName === 'pepper' && state.singleOrientation)
     ? ` [θ=${state.theta}°, φ=${state.phi}°]`
     : '';
   const trace = {
-    x: data.B, y: data.spc,
+    x: data.B, y: yData,
     type: 'scatter', mode: 'lines',
     line: { color: '#00E5FF', width: 1.8 },
-    name: `${data.simulator}() [${methodLabel}]${oriLabel}`,
+    name: `${simName}() [${methodLabel}]${oriLabel}`,
   };
   const layout = {
     ...PLOTLY_LAYOUT_BASE,
@@ -1015,12 +1026,29 @@ async function loadPreset(idx) {
   if(document.getElementById('f-nPoints')) document.getElementById('f-nPoints').value = p.params.exp.nPoints;
 
   const mwSummary = document.getElementById('mw-summary');
-  if (mwSummary) mwSummary.textContent = `${p.params.exp.mwFreq.toFixed(2)} GHz · ${p.params.exp.Bmin}–${p.params.exp.Bmax} mT`;
+  if (mwSummary) mwSummary.textContent = `${p.params.exp.mwFreq.toFixed(2)} GHz · ${p.params.exp.Bmin}–${p.params.exp.Bmax} mT · ${p.params.exp.nPoints} pts`;
 
   if(document.getElementById('f-lvl-Bmin')) document.getElementById('f-lvl-Bmin').value = 0;
   if(document.getElementById('f-lvl-Bmax')) document.getElementById('f-lvl-Bmax').value = p.params.exp.Bmax;
   const lvlSummary = document.getElementById('levels-summary');
   if (lvlSummary) lvlSummary.textContent = `0–${p.params.exp.Bmax} mT · 200 pts`;
+
+  // Expand all relevant parameter cards so all parameters are immediately visible
+  const cardElectron = document.getElementById('card-electron');
+  if (cardElectron) cardElectron.classList.remove('collapsed');
+
+  const cardZfs = document.getElementById('card-zfs');
+  if (cardZfs) {
+    if ((p.params.D && p.params.D.length > 0 && (p.params.D[0] !== 0 || p.params.D[1] !== 0)) || p.params.S > 0.5) {
+      cardZfs.classList.remove('collapsed');
+    }
+  }
+
+  const cardLw = document.getElementById('card-lw');
+  if (cardLw) cardLw.classList.remove('collapsed');
+
+  const cardMw = document.getElementById('card-mw');
+  if (cardMw) cardMw.classList.remove('collapsed');
 
   // Reset orientation controls
   state.singleOrientation = false;

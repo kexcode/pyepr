@@ -299,9 +299,12 @@ def garlic(
     lw_gauss = float(lw[0]) if len(lw) >= 1 else 0.3
     lw_lorentz = float(lw[1]) if len(lw) >= 2 else 0.0
 
+    return_both = bool(opt.get('return_both', exp.get('return_both', False)))
+
     # Build field axis
     B = np.linspace(B_range[0], B_range[1], n_points)
-    spc = np.zeros(n_points)
+    spc_abs = np.zeros(n_points)
+    spc_deriv = np.zeros(n_points)
 
     # Compute resonance fields according to chosen model
     if method in ('perturb1', 'first_order', 'first'):
@@ -311,26 +314,24 @@ def garlic(
     else:  # 'matrix' / exact
         B_res, intensities = _resonance_fields_matrix(sys, mw_freq, (B_range[0], B_range[1]))
 
-    # Accumulate lineshapes
+    # Accumulate lineshapes simultaneously
     for B0, weight in zip(B_res, intensities):
         if B0 < B_range[0] or B0 > B_range[1]:
             continue  # skip lines outside the window
 
-        if harmonic == 0:
-            # Absorption mode
-            if lw_gauss > 0:
-                spc += weight * _gaussian(B, B0, lw_gauss)
-            if lw_lorentz > 0:
-                spc += weight * _lorentzian(B, B0, lw_lorentz)
-            if lw_gauss == 0 and lw_lorentz == 0:
-                # Delta function approximation via nearest point
-                idx = np.argmin(np.abs(B - B0))
-                spc[idx] += weight
-        else:
-            # First derivative (standard CW-EPR)
-            if lw_gauss > 0:
-                spc += weight * _deriv_gaussian(B, B0, lw_gauss)
-            if lw_lorentz > 0:
-                spc += weight * _deriv_lorentzian(B, B0, lw_lorentz)
+        if lw_gauss > 0:
+            spc_abs += weight * _gaussian(B, B0, lw_gauss)
+            spc_deriv += weight * _deriv_gaussian(B, B0, lw_gauss)
+        if lw_lorentz > 0:
+            spc_abs += weight * _lorentzian(B, B0, lw_lorentz)
+            spc_deriv += weight * _deriv_lorentzian(B, B0, lw_lorentz)
+        if lw_gauss == 0 and lw_lorentz == 0:
+            idx = np.argmin(np.abs(B - B0))
+            spc_abs[idx] += weight
+            if 0 < idx < n_points - 1:
+                spc_deriv[idx - 1] -= weight
+                spc_deriv[idx + 1] += weight
 
-    return B, spc
+    if return_both:
+        return B, spc_abs, spc_deriv
+    return B, (spc_deriv if harmonic != 0 else spc_abs)
