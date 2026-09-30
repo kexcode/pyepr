@@ -167,8 +167,8 @@
           </div>
           <div class="card-body">
             <div id="nuclei-list"></div>
-            <div style="display:flex;gap:8px;align-items:center;margin-top:4px;">
-              <select id="nucleus-symbol-select" style="flex:1; font-size:0.82rem;">
+            <div class="field-row" style="gap:8px; align-items:stretch; margin-top:8px;">
+              <select id="nucleus-symbol-select" style="flex:1; height:38px; font-size:0.84rem; padding:6px 10px;">
                 <option value="1H">¹H</option>
                 <option value="2H">²H (D)</option>
                 <option value="14N" selected>¹⁴N</option>
@@ -181,51 +181,10 @@
                 <option value="55Mn">⁵⁵Mn</option>
                 <option value="57Fe">⁵⁷Fe</option>
               </select>
-              <button id="add-nucleus-btn" style="padding:8px 14px;min-width:auto;" onclick="addNucleus()">
+              <button id="add-nucleus-btn" style="flex:1; height:38px; padding:0 12px; font-size:0.84rem;" onclick="addNucleus()">
                 <span class="material-icons-round">add</span>
-                Add
+                Add Nucleus
               </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- MW & Field card -->
-        <div class="param-card" id="card-mw">
-          <div class="card-header" onclick="toggleCard('card-mw')">
-            <div class="card-icon" style="background: linear-gradient(135deg, #006064, #00BCD4)">
-              <span class="material-icons-round">wifi</span>
-            </div>
-            <div style="flex:1">
-              <div class="card-title">Microwave & Field</div>
-              <div class="card-subtitle" id="mw-summary">9.50 GHz · 300–400 mT · 1024 pts</div>
-            </div>
-            <span class="material-icons-round card-chevron">expand_more</span>
-          </div>
-          <div class="card-body">
-            <div class="field-group">
-              <label class="field-label" data-tip="Microwave frequency in GHz">mwFreq (GHz)</label>
-              <input type="number" id="f-mwFreq" value="9.5" step="0.1" min="0.1"/>
-            </div>
-            <div class="field-row">
-              <div class="field-group">
-                <label class="field-label">B min (mT)</label>
-                <input type="number" id="f-Bmin" value="300" step="5"/>
-              </div>
-              <div class="field-group">
-                <label class="field-label">B max (mT)</label>
-                <input type="number" id="f-Bmax" value="400" step="5"/>
-              </div>
-            </div>
-            <div class="field-group">
-              <label class="field-label" data-tip="Number of points along the magnetic field axis">Number of Points (nPoints)</label>
-              <input type="number" id="f-nPoints" value="1024" min="16" max="32768" step="1"/>
-            </div>
-            <div class="field-group">
-              <label class="field-label">Detection mode</label>
-              <div class="seg-control">
-                <button class="seg-btn" id="btn-absorption" onclick="setHarmonic(0)">Absorption</button>
-                <button class="seg-btn active" id="btn-derivative" onclick="setHarmonic(1)">1st Derivative</button>
-              </div>
             </div>
           </div>
         </div>
@@ -259,15 +218,37 @@
           </div>
         </div>
 
-        <!-- Simulation Model card -->
-        <div class="param-card" id="card-model">
-          <div class="card-header" onclick="toggleCard('card-model')">
-            <div class="card-icon" style="background: linear-gradient(135deg, #1B5E20, #00E676)">
-              <span class="material-icons-round">psychology</span>
+        <!-- Detection mode card -->
+        <div class="param-card" id="card-detection">
+          <div class="card-header" onclick="toggleCard('card-detection')">
+            <div class="card-icon" style="background: linear-gradient(135deg, #00838F, #00BCD4)">
+              <span class="material-icons-round">show_chart</span>
             </div>
             <div style="flex:1">
-              <div class="card-title">Simulation Model</div>
-              <div class="card-subtitle" id="model-summary">Matrix diagonalization (exact)</div>
+              <div class="card-title">Detection mode</div>
+              <div class="card-subtitle" id="detection-summary">1st Derivative (modulated)</div>
+            </div>
+            <span class="material-icons-round card-chevron">expand_more</span>
+          </div>
+          <div class="card-body">
+            <div class="field-group">
+              <div class="seg-control">
+                <button class="seg-btn" id="btn-absorption" onclick="setHarmonic(0)">Absorption</button>
+                <button class="seg-btn active" id="btn-derivative" onclick="setHarmonic(1)">1st Derivative</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Options card -->
+        <div class="param-card" id="card-options">
+          <div class="card-header" onclick="toggleCard('card-options')">
+            <div class="card-icon" style="background: linear-gradient(135deg, #1B5E20, #00E676)">
+              <span class="material-icons-round">tune</span>
+            </div>
+            <div style="flex:1">
+              <div class="card-title">Options</div>
+              <div class="card-subtitle" id="options-summary">Matrix · Grid 20 · 1024 pts</div>
             </div>
             <span class="material-icons-round card-chevron">expand_more</span>
           </div>
@@ -283,6 +264,16 @@
                   <span class="model-btn-name">2nd Order</span>
                   <span class="model-btn-desc">Perturbation</span>
                 </button>
+              </div>
+            </div>
+            <div class="field-row" style="margin-top:8px;">
+              <div class="field-group" id="group-gridSize">
+                <label class="field-label" data-tip="Powder averaging grid knots for solid state (Opt.GridSize / nKnots)">Grid Size</label>
+                <input type="number" id="f-gridSize" value="20" min="2" max="180" step="1"/>
+              </div>
+              <div class="field-group">
+                <label class="field-label" data-tip="Number of points along the magnetic field axis (Exp.nPoints)">nPoints</label>
+                <input type="number" id="f-nPoints" value="1024" min="16" max="32768" step="1"/>
               </div>
             </div>
           </div>
@@ -332,6 +323,66 @@
                   <label class="field-label" data-tip="Azimuthal angle φ in degrees (0° to 360°)">φ (degrees)</label>
                   <input type="number" id="f-phi" value="0.0" min="0" max="360" step="5"/>
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- MW & Field card -->
+        <div class="param-card" id="card-mw">
+          <div class="card-header" onclick="toggleCard('card-mw')">
+            <div class="card-icon" style="background: linear-gradient(135deg, #006064, #00BCD4)">
+              <span class="material-icons-round">wifi</span>
+            </div>
+            <div style="flex:1">
+              <div class="card-title">Microwave & Field</div>
+              <div class="card-subtitle" id="mw-summary">9.40 GHz · 300–400 mT</div>
+            </div>
+            <span class="material-icons-round card-chevron">expand_more</span>
+          </div>
+          <div class="card-body">
+            <div class="field-row">
+              <div class="field-group">
+                <label class="field-label" data-tip="Microwave frequency in GHz: select preset or type any value">mwFreq (GHz)</label>
+                <div class="combobox-field" style="position:relative; display:flex; align-items:center; width:100%;">
+                  <input type="number" id="f-mwFreq" value="9.4" step="any" min="0.01" list="mwfreq-list" style="width:100%; padding-right:36px;" placeholder="9.4"/>
+                  <select id="f-mwFreq-dropdown" style="position:absolute; right:0; top:0; width:36px; height:100%; opacity:0; cursor:pointer; border:none; background:transparent; z-index:2;" onchange="onMwFreqDropdownChange(this.value)" title="Choose standard frequency preset">
+                    <option value="">Presets...</option>
+                    <option value="3.4">3.4 GHz</option>
+                    <option value="9.4">9.4 GHz</option>
+                    <option value="34">34 GHz</option>
+                    <option value="94">94 GHz</option>
+                    <option value="120">120 GHz</option>
+                    <option value="240">240 GHz</option>
+                    <option value="360">360 GHz</option>
+                    <option value="1000">1 THz</option>
+                  </select>
+                  <span class="material-icons-round" style="position:absolute; right:8px; pointer-events:none; font-size:20px; color:var(--text-dim); z-index:1;">arrow_drop_down</span>
+                </div>
+                <datalist id="mwfreq-list">
+                  <option value="3.4">3.4 GHz (S-band)</option>
+                  <option value="9.4">9.4 GHz (X-band)</option>
+                  <option value="34">34 GHz (Q-band)</option>
+                  <option value="94">94 GHz (W-band)</option>
+                  <option value="120">120 GHz (D-band)</option>
+                  <option value="240">240 GHz</option>
+                  <option value="360">360 GHz</option>
+                  <option value="1000">1 THz (1000 GHz)</option>
+                </datalist>
+              </div>
+              <div class="field-group" id="group-temperature">
+                <label class="field-label" data-tip="Sample temperature in Kelvin (Exp.Temperature). If specified, Boltzmann populations are calculated.">Temperature (K)</label>
+                <input type="number" id="f-temperature" placeholder="None" min="0.1" step="any"/>
+              </div>
+            </div>
+            <div class="field-row">
+              <div class="field-group">
+                <label class="field-label">B min (mT)</label>
+                <input type="number" id="f-Bmin" value="300" step="5"/>
+              </div>
+              <div class="field-group">
+                <label class="field-label">B max (mT)</label>
+                <input type="number" id="f-Bmax" value="400" step="5"/>
               </div>
             </div>
           </div>
@@ -434,11 +485,11 @@
     <!-- Validation area -->
     <div id="validation-area"></div>
 
-    <!-- Simulate button -->
+    <!-- Simulate / Break button -->
     <div id="panel-footer">
-      <button id="simulate-btn" onclick="runSimulation()">
+      <button id="simulate-btn" onclick="onSimulateBtnClick()">
         <span class="material-icons-round" id="sim-icon">play_arrow</span>
-        Simulate
+        <span id="sim-text">Simulate</span>
       </button>
     </div>
 

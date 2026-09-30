@@ -30,6 +30,7 @@ function setModel(method, triggerSim = true) {
     if (method === 'matrix') summaryEl.textContent = 'Matrix diagonalization (exact)';
     else summaryEl.textContent = 'Perturbation (2nd order)';
   }
+  updateOptionsSummary();
   // Re-run simulation with the new model if requested
   if (triggerSim) {
     runSimulation();
@@ -121,9 +122,10 @@ function onOrientationInputChange(immediate = false) {
 // API helpers
 // ============================================================
 
-async function api(method, path, body) {
+async function api(method, path, body, signal = null) {
   const opts = { method, headers: { 'Content-Type': 'application/json' } };
   if (body !== undefined) opts.body = JSON.stringify(body);
+  if (signal) opts.signal = signal;
   const res = await fetch(path, opts);
   if (!res.ok) {
     const detail = await res.json().catch(() => ({ detail: res.statusText }));
@@ -132,10 +134,10 @@ async function api(method, path, body) {
   return res.json();
 }
 
-const GET    = (path)        => api('GET',    path);
-const PUT    = (path, body)  => api('PUT',    path, body);
-const POST   = (path, body)  => api('POST',   path, body);
-const DELETE = (path)        => api('DELETE', path);
+const GET    = (path, signal)        => api('GET',    path, undefined, signal);
+const PUT    = (path, body, signal)  => api('PUT',    path, body, signal);
+const POST   = (path, body, signal)  => api('POST',   path, body, signal);
+const DELETE = (path, signal)        => api('DELETE', path, undefined, signal);
 
 // ============================================================
 // Init
@@ -250,8 +252,12 @@ function setSimulator(sim) {
 
 function setHarmonic(h) {
   state.harmonic = h;
-  document.getElementById('btn-absorption').classList.toggle('active', h === 0);
-  document.getElementById('btn-derivative').classList.toggle('active', h === 1);
+  const btnAbs = document.getElementById('btn-absorption');
+  const btnDer = document.getElementById('btn-derivative');
+  if (btnAbs) btnAbs.classList.toggle('active', h === 0);
+  if (btnDer) btnDer.classList.toggle('active', h === 1);
+  const sumEl = document.getElementById('detection-summary');
+  if (sumEl) sumEl.textContent = (h === 0) ? 'Absorption' : '1st Derivative (modulated)';
   if (state.currentSpectrumData) {
     renderSpectrum(state.currentSpectrumData);
   }
@@ -290,14 +296,54 @@ function bindInputListeners() {
 let _spectrumDebounceTimer = null;
 let _levelsDebounceTimer = null;
 
-function onFieldParamsChange(immediate = false) {
-  const mwFreq = parseFloat(document.getElementById('f-mwFreq')?.value || 9.5);
+function onMwFreqDropdownChange(val) {
+  if (!val) return;
+  const mwInput = document.getElementById('f-mwFreq');
+  if (mwInput) {
+    mwInput.value = val;
+    onFieldParamsChange(true);
+  }
+}
+
+function syncMwFreqDropdown() {
+  const inputVal = parseFloat(document.getElementById('f-mwFreq')?.value);
+  const select = document.getElementById('f-mwFreq-dropdown');
+  if (!select || isNaN(inputVal)) return;
+  const standard = ['3.4', '9.4', '34', '94', '120', '240', '360', '1000'];
+  const match = standard.find(s => Math.abs(parseFloat(s) - inputVal) < 1e-4);
+  select.value = match ? match : '';
+}
+
+function updateOptionsSummary() {
+  const sumEl = document.getElementById('options-summary');
+  if (!sumEl) return;
+  const methodLabel = state.method === 'perturb2' ? 'Perturb 2nd' : 'Matrix';
+  const gridSize = document.getElementById('f-gridSize')?.value || 20;
+  const nPoints = document.getElementById('f-nPoints')?.value || 1024;
+  sumEl.textContent = `${methodLabel} · Grid ${gridSize} · ${nPoints} pts`;
+}
+
+function updateMwSummary() {
+  syncMwFreqDropdown();
+  const ms = document.getElementById('mw-summary');
+  if (!ms) return;
+  const mwFreq = parseFloat(document.getElementById('f-mwFreq')?.value || 9.4);
   const Bmin = parseFloat(document.getElementById('f-Bmin')?.value || 300);
   const Bmax = parseFloat(document.getElementById('f-Bmax')?.value || 400);
-  const nPoints = parseInt(document.getElementById('f-nPoints')?.value || 1024);
+  const tempInput = document.getElementById('f-temperature');
+  const tempVal = tempInput && tempInput.value !== '' ? parseFloat(tempInput.value) : null;
+  const freqStr = mwFreq >= 1000 ? `${(mwFreq / 1000).toFixed(1)} THz (${mwFreq} GHz)` : `${mwFreq.toFixed(2)} GHz`;
+  const tempStr = tempVal != null && !isNaN(tempVal) ? ` · ${tempVal} K` : '';
+  ms.textContent = `${freqStr}${tempStr} · ${Bmin}–${Bmax} mT`;
+}
 
-  const mwSummary = document.getElementById('mw-summary');
-  if (mwSummary) mwSummary.textContent = `${mwFreq.toFixed(2)} GHz · ${Bmin}–${Bmax} mT · ${nPoints} pts`;
+function onFieldParamsChange(immediate = false) {
+  const Bmin = parseFloat(document.getElementById('f-Bmin')?.value || 300);
+  const Bmax = parseFloat(document.getElementById('f-Bmax')?.value || 400);
+
+  syncMwFreqDropdown();
+  updateMwSummary();
+  updateOptionsSummary();
 
   if (Bmin >= Bmax) return;
 
@@ -330,9 +376,11 @@ function bindActiveFieldListeners() {
   const bminEl = document.getElementById('f-Bmin');
   const bmaxEl = document.getElementById('f-Bmax');
   const mwFreqEl = document.getElementById('f-mwFreq');
+  const tempEl = document.getElementById('f-temperature');
   const nPointsEl = document.getElementById('f-nPoints');
+  const gridSizeEl = document.getElementById('f-gridSize');
 
-  [bminEl, bmaxEl, mwFreqEl, nPointsEl].forEach(el => {
+  [bminEl, bmaxEl, mwFreqEl, tempEl, nPointsEl, gridSizeEl].forEach(el => {
     if (!el) return;
     el.addEventListener('input', () => onFieldParamsChange(false));
     el.addEventListener('change', () => onFieldParamsChange(true));
@@ -582,10 +630,15 @@ function renderValidation(messages) {
 // ============================================================
 
 async function simulateSpectrumOnly() {
-  const mwFreq  = parseFloat(document.getElementById('f-mwFreq')?.value || 9.5);
+  const mwFreq  = parseFloat(document.getElementById('f-mwFreq')?.value || 9.4);
   const Bmin    = parseFloat(document.getElementById('f-Bmin')?.value   || 300);
   const Bmax    = parseFloat(document.getElementById('f-Bmax')?.value   || 400);
   const nPoints = parseInt(document.getElementById('f-nPoints')?.value  || 1024);
+  const gridSize = parseInt(document.getElementById('f-gridSize')?.value || 20);
+  const tempEl = document.getElementById('f-temperature');
+  const temperature = tempEl && tempEl.value !== '' && !isNaN(parseFloat(tempEl.value))
+    ? parseFloat(tempEl.value)
+    : null;
 
   if (Bmin >= Bmax) return;
 
@@ -596,7 +649,9 @@ async function simulateSpectrumOnly() {
       nPoints, Harmonic: state.harmonic,
       simulator: state.simulator,
       method: state.method,
-      nKnots: 20,
+      nKnots: gridSize,
+      gridSize: gridSize,
+      Temperature: temperature,
       singleOrientation: isSingle,
       orientation: [state.theta, state.phi]
     });
@@ -608,7 +663,7 @@ async function simulateSpectrumOnly() {
 }
 
 async function simulateLevelsOnly() {
-  const mwFreq  = parseFloat(document.getElementById('f-mwFreq')?.value || 9.5);
+  const mwFreq  = parseFloat(document.getElementById('f-mwFreq')?.value || 9.4);
   const lvlBmin = parseFloat(document.getElementById('f-lvl-Bmin')?.value || 0);
   const lvlBmax = parseFloat(document.getElementById('f-lvl-Bmax')?.value || 400);
 
@@ -630,16 +685,83 @@ async function simulateLevelsOnly() {
   }
 }
 
-async function runSimulation() {
+let _isSimulating = false;
+let _simulationAbortController = null;
+
+function onSimulateBtnClick() {
+  if (_isSimulating) {
+    abortSimulation();
+  } else {
+    runSimulation();
+  }
+}
+
+async function abortSimulation() {
+  if (!_isSimulating) return;
+  if (_simulationAbortController) {
+    _simulationAbortController.abort();
+    _simulationAbortController = null;
+  }
+  try {
+    fetch('/api/simulate/cancel', { method: 'POST' }).catch(() => {});
+  } catch (e) {}
+
+  setSimulationButtonState(false);
+  showToast('Simulation stopped', 'info');
+}
+
+function setSimulationButtonState(isBusy) {
+  _isSimulating = isBusy;
   const btn = document.getElementById('simulate-btn');
   const icon = document.getElementById('sim-icon');
-  if (btn) { btn.disabled = true; }
-  if (icon) { icon.textContent = 'refresh'; icon.classList.add('spin'); }
+  const text = document.getElementById('sim-text');
 
-  const mwFreq  = parseFloat(document.getElementById('f-mwFreq')?.value || 9.5);
+  if (isBusy) {
+    if (btn) {
+      btn.disabled = false;
+      btn.classList.add('break-mode');
+    }
+    if (icon) {
+      icon.textContent = 'stop';
+      icon.classList.remove('spin');
+    }
+    if (text) {
+      text.textContent = 'Break';
+    }
+  } else {
+    if (btn) {
+      btn.disabled = false;
+      btn.classList.remove('break-mode');
+    }
+    if (icon) {
+      icon.textContent = 'play_arrow';
+      icon.classList.remove('spin');
+    }
+    if (text) {
+      text.textContent = 'Simulate';
+    }
+  }
+}
+
+async function runSimulation() {
+  if (_isSimulating) {
+    abortSimulation();
+    return;
+  }
+
+  _simulationAbortController = new AbortController();
+  const signal = _simulationAbortController.signal;
+  setSimulationButtonState(true);
+
+  const mwFreq  = parseFloat(document.getElementById('f-mwFreq')?.value || 9.4);
   const Bmin    = parseFloat(document.getElementById('f-Bmin')?.value   || 300);
   const Bmax    = parseFloat(document.getElementById('f-Bmax')?.value   || 400);
   const nPoints = parseInt(document.getElementById('f-nPoints')?.value  || 1024);
+  const gridSize = parseInt(document.getElementById('f-gridSize')?.value || 20);
+  const tempEl = document.getElementById('f-temperature');
+  const temperature = tempEl && tempEl.value !== '' && !isNaN(parseFloat(tempEl.value))
+    ? parseFloat(tempEl.value)
+    : null;
   const lvlBmin = parseFloat(document.getElementById('f-lvl-Bmin')?.value || 0);
   const lvlBmax = parseFloat(document.getElementById('f-lvl-Bmax')?.value || 400);
 
@@ -654,16 +776,18 @@ async function runSimulation() {
         nPoints, Harmonic: state.harmonic,
         simulator: state.simulator,
         method: state.method,
-        nKnots: 20,
+        nKnots: gridSize,
+        gridSize: gridSize,
+        Temperature: temperature,
         singleOrientation: isSingle,
         orientation: [state.theta, state.phi]
-      }),
+      }, signal),
       POST('/api/simulate/levels', {
         B_min: lvlBmin, B_max: lvlBmax, nPoints: 200,
         method: state.method,
         mwFreq: mwFreq,
         orientation: ori,
-      }),
+      }, signal),
     ]);
 
     renderSpectrum(spectrum);
@@ -671,11 +795,14 @@ async function runSimulation() {
     renderValidation(spectrum.validation.messages);
     updateSpectrumBadge(spectrum);
   } catch (e) {
-    showToast('Simulation error: ' + e.message, 'error');
-    console.error(e);
+    if (e.name === 'AbortError' || e.message?.includes('cancelled')) {
+      console.log('Simulation stopped by user.');
+    } else {
+      showToast('Simulation error: ' + e.message, 'error');
+      console.error(e);
+    }
   } finally {
-    if (btn) btn.disabled = false;
-    if (icon) { icon.textContent = 'play_arrow'; icon.classList.remove('spin'); }
+    setSimulationButtonState(false);
   }
 }
 
@@ -848,14 +975,9 @@ function updateSummaries(sys) {
       : 'D = 0 MHz · E = 0 MHz';
   }
 
-  // MW summary
-  const ms = document.getElementById('mw-summary');
-  if (ms) {
-    const mwFreq = parseFloat(document.getElementById('f-mwFreq')?.value || 9.5);
-    const Bmin   = parseFloat(document.getElementById('f-Bmin')?.value   || 300);
-    const Bmax   = parseFloat(document.getElementById('f-Bmax')?.value   || 400);
-    ms.textContent = `${mwFreq.toFixed(2)} GHz · ${Bmin}–${Bmax} mT`;
-  }
+  // MW & Options summaries
+  updateMwSummary();
+  updateOptionsSummary();
 }
 
 function showToast(message, type = 'info') {
@@ -883,7 +1005,7 @@ const PRESETS = [
     badge: 'e⁻',
     desc: 'S = 1/2 · Free spin · g = 2.0023',
     color: '#00BCD4',
-    params: { S: 0.5, g: [2.0023, 2.0023, 2.0023], D: [], nuclei: [], lw: [0.3, 0.0], simulator: "garlic", method: "matrix", exp: { mwFreq: 9.4, Bmin: 330, Bmax: 340, nPoints: 501 } }
+    params: { S: 0.5, g: [2.0023, 2.0023, 2.0023], D: [], nuclei: [], lw: [0.3, 0.0], simulator: "garlic", method: "matrix", gridSize: 23, exp: { mwFreq: 9.4, Bmin: 330, Bmax: 340, nPoints: 501, temperature: null } }
   },
   {
     name: '1 Proton',
@@ -891,7 +1013,7 @@ const PRESETS = [
     badge: '¹H',
     desc: 'I = 1/2 · Atomic hydrogen doublet',
     color: '#00E5FF',
-    params: { S: 0.5, g: [2.0029, 2.0029, 2.0029], D: [], nuclei: [{ isotope: "1H", A: 1430, A_aniso: [1430, 1430, 1430], Q: 0, Q_aniso: [0, 0, 0] }], lw: [1, 0.0], simulator: "garlic", method: "matrix", exp: { mwFreq: 9.4, Bmin: 200, Bmax: 450, nPoints: 5001 } }
+    params: { S: 0.5, g: [2.0029, 2.0029, 2.0029], D: [], nuclei: [{ isotope: "1H", A: 1430, A_aniso: [1430, 1430, 1430], Q: 0, Q_aniso: [0, 0, 0] }], lw: [1, 0.0], simulator: "garlic", method: "perturb2", gridSize: 23, exp: { mwFreq: 9.4, Bmin: 200, Bmax: 450, nPoints: 5001, temperature: null } }
   },
   {
     name: '2 Protons',
@@ -899,7 +1021,7 @@ const PRESETS = [
     badge: '2× ¹H',
     desc: 'Two equivalent protons · 1:2:1 Triplet',
     color: '#3D5AFE',
-    params: { S: 0.5, g: [2.0029, 2.0029, 2.0029], D: [], nuclei: [{ isotope: "1H", A: 1430, A_aniso: [1430, 1430, 1430], Q: 0, Q_aniso: [0, 0, 0] }, { isotope: "1H", A: 1430, A_aniso: [1430, 1430, 1430], Q: 0, Q_aniso: [0, 0, 0] }], lw: [1, 0.0], simulator: "garlic", method: "matrix", exp: { mwFreq: 9.4, Bmin: 200, Bmax: 450, nPoints: 5001 } }
+    params: { S: 0.5, g: [2.0029, 2.0029, 2.0029], D: [], nuclei: [{ isotope: "1H", A: 1430, A_aniso: [1430, 1430, 1430], Q: 0, Q_aniso: [0, 0, 0] }, { isotope: "1H", A: 1430, A_aniso: [1430, 1430, 1430], Q: 0, Q_aniso: [0, 0, 0] }], lw: [1, 0.0], simulator: "garlic", method: "matrix", gridSize: 23, exp: { mwFreq: 9.4, Bmin: 200, Bmax: 450, nPoints: 5001, temperature: null } }
   },
   {
     name: 'Nitroxide radical',
@@ -907,7 +1029,7 @@ const PRESETS = [
     badge: 'R₂NO•',
     desc: '¹⁴N (I = 1) aminoxyl · 1:1:1 Triplet',
     color: '#FF4081',
-    params: { S: 0.5, g: [2.0083, 2.0061, 2.0022], D: [], nuclei: [{ isotope: "14N", A: 38.27, A_aniso: [11.2, 11.2, 92.4], Q: 0, Q_aniso: [0, 0, 0] }], lw: [0.5, 0.0], simulator: "pepper", method: "perturb2", exp: { mwFreq: 9.4, Bmin: 328, Bmax: 342, nPoints: 501 } }
+    params: { S: 0.5, g: [2.0083, 2.0061, 2.0022], D: [], nuclei: [{ isotope: "14N", A: 38.27, A_aniso: [11.2, 11.2, 92.4], Q: 0, Q_aniso: [0, 0, 0] }], lw: [0.5, 0.0], simulator: "pepper", method: "perturb2", gridSize: 23, exp: { mwFreq: 9.4, Bmin: 328, Bmax: 342, nPoints: 501, temperature: null } }
   },
   {
     name: 'Methyl radical',
@@ -923,7 +1045,7 @@ const PRESETS = [
         { isotope: "1H", A: -70, A_aniso: [-70, -70, -70], Q: 0, Q_aniso: [0, 0, 0] },
         { isotope: "13C", A: 105, A_aniso: [105, 105, 105], Q: 0, Q_aniso: [0, 0, 0] }
       ],
-      lw: [0.2, 0.0], simulator: "garlic", method: "matrix", exp: { mwFreq: 9.4, Bmin: 325, Bmax: 345, nPoints: 501 }
+      lw: [0.2, 0.0], simulator: "garlic", method: "perturb2", gridSize: 23, exp: { mwFreq: 9.4, Bmin: 325, Bmax: 345, nPoints: 501, temperature: null }
     }
   },
   {
@@ -932,7 +1054,7 @@ const PRESETS = [
     badge: 'S = 1',
     desc: 'Parallel spins ↑↑ · Axial & rhombic ZFS',
     color: '#7C4DFF',
-    params: { S: 1.0, g: [2.0000, 2.0000, 2.0000], D: [4496.88, 749.48], nuclei: [], lw: [10, 0.0], simulator: "pepper", method: "matrix", exp: { mwFreq: 9.4, Bmin: 0, Bmax: 600, nPoints: 2501 } }
+    params: { S: 1.0, g: [2.0000, 2.0000, 2.0000], D: [4496.88, 749.48], nuclei: [], lw: [10, 0.0], simulator: "pepper", method: "matrix", gridSize: 23, exp: { mwFreq: 9.4, Bmin: 0, Bmax: 600, nPoints: 2501, temperature: null } }
   },
   {
     name: 'Triplet nitrene',
@@ -940,7 +1062,7 @@ const PRESETS = [
     badge: 'R–N:',
     desc: 'High-field 94 GHz · Large axial ZFS',
     color: '#FF6E40',
-    params: { S: 1.0, g: [2.0033, 2.0033, 2.0033], D: [41041.59, 2788.07], nuclei: [], lw: [30, 0.0], simulator: "pepper", method: "matrix", exp: { mwFreq: 94.0, Bmin: 0, Bmax: 6000, nPoints: 5001 } }
+    params: { S: 1.0, g: [2.0033, 2.0033, 2.0033], D: [41041.59, 2788.07], nuclei: [], lw: [30, 0.0], simulator: "pepper", method: "matrix", gridSize: 17, exp: { mwFreq: 94.0, Bmin: 0, Bmax: 6000, nPoints: 5001, temperature: null } }
   },
   {
     name: 'Triplet carbene',
@@ -948,7 +1070,7 @@ const PRESETS = [
     badge: 'R₂C:',
     desc: 'Divalent carbene · Rhombic ZFS',
     color: '#E040FB',
-    params: { S: 1.0, g: [2.0033, 2.0033, 2.0033], D: [12258.51, 2788.07], nuclei: [], lw: [10, 0.0], simulator: "pepper", method: "matrix", exp: { mwFreq: 9.4, Bmin: 0, Bmax: 1400, nPoints: 5001 } }
+    params: { S: 1.0, g: [2.0033, 2.0033, 2.0033], D: [12258.51, 2788.07], nuclei: [], lw: [10, 0.0], simulator: "pepper", method: "matrix", gridSize: 17, exp: { mwFreq: 9.4, Bmin: 0, Bmax: 1400, nPoints: 5001, temperature: null } }
   },
   {
     name: 'Mn(III) ion',
@@ -956,7 +1078,7 @@ const PRESETS = [
     badge: 'Mn³⁺',
     desc: 'High-spin d⁴ (S = 2) · Negative ZFS',
     color: '#FFAB00',
-    params: { S: 2.0, g: [2.0000, 2.0000, 2.0000], D: [-119317.40, 0], nuclei: [], lw: [80, 0.0], simulator: "pepper", method: "matrix", exp: { mwFreq: 240.0, Bmin: 0, Bmax: 12000, nPoints: 2501 } }
+    params: { S: 2.0, g: [2.0000, 2.0000, 2.0000], D: [-119317.40, 0], nuclei: [], lw: [80, 0.0], simulator: "pepper", method: "matrix", gridSize: 201, exp: { mwFreq: 240.0, Bmin: 0, Bmax: 12000, nPoints: 2501, temperature: 5 } }
   },
   {
     name: 'Fe(III) ion',
@@ -964,7 +1086,7 @@ const PRESETS = [
     badge: 'Fe³⁺',
     desc: 'High-spin d⁵ (S = 5/2) · Huge ZFS',
     color: '#FF5252',
-    params: { S: 2.5, g: [2.0000, 2.0000, 2.0000], D: [149896.23, 0], nuclei: [], lw: [20, 0.0], simulator: "pepper", method: "matrix", exp: { mwFreq: 9.4, Bmin: 0, Bmax: 400, nPoints: 2501 } }
+    params: { S: 2.5, g: [2.0000, 2.0000, 2.0000], D: [149896.23, 0], nuclei: [], lw: [20, 0.0], simulator: "pepper", method: "matrix", gridSize: 30, exp: { mwFreq: 9.4, Bmin: 0, Bmax: 400, nPoints: 2501, temperature: 5 } }
   }
 ];
 
@@ -1021,12 +1143,16 @@ async function loadPreset(idx) {
   if(document.getElementById('f-lL')) document.getElementById('f-lL').value = (p.params.lw[1] || 0).toFixed(2);
   
   if(document.getElementById('f-mwFreq')) document.getElementById('f-mwFreq').value = p.params.exp.mwFreq;
+  syncMwFreqDropdown();
+  const tempInput = document.getElementById('f-temperature');
+  if(tempInput) tempInput.value = (p.params.exp.temperature != null) ? p.params.exp.temperature : '';
   if(document.getElementById('f-Bmin')) document.getElementById('f-Bmin').value = p.params.exp.Bmin;
   if(document.getElementById('f-Bmax')) document.getElementById('f-Bmax').value = p.params.exp.Bmax;
   if(document.getElementById('f-nPoints')) document.getElementById('f-nPoints').value = p.params.exp.nPoints;
+  if(document.getElementById('f-gridSize')) document.getElementById('f-gridSize').value = (p.params.opt && p.params.opt.GridSize) || p.params.gridSize || 20;
 
-  const mwSummary = document.getElementById('mw-summary');
-  if (mwSummary) mwSummary.textContent = `${p.params.exp.mwFreq.toFixed(2)} GHz · ${p.params.exp.Bmin}–${p.params.exp.Bmax} mT · ${p.params.exp.nPoints} pts`;
+  updateMwSummary();
+  updateOptionsSummary();
 
   if(document.getElementById('f-lvl-Bmin')) document.getElementById('f-lvl-Bmin').value = 0;
   if(document.getElementById('f-lvl-Bmax')) document.getElementById('f-lvl-Bmax').value = p.params.exp.Bmax;
@@ -1046,6 +1172,12 @@ async function loadPreset(idx) {
 
   const cardLw = document.getElementById('card-lw');
   if (cardLw) cardLw.classList.remove('collapsed');
+
+  const cardDetection = document.getElementById('card-detection');
+  if (cardDetection) cardDetection.classList.remove('collapsed');
+
+  const cardOptions = document.getElementById('card-options');
+  if (cardOptions) cardOptions.classList.remove('collapsed');
 
   const cardMw = document.getElementById('card-mw');
   if (cardMw) cardMw.classList.remove('collapsed');

@@ -38,26 +38,40 @@ from easyspin_py.simulation.validator import validate_pepper, Severity
 
 
 # ---------------------------------------------------------------------------
+def _is_axial_system(sys: SpinSystem) -> bool:
+    """Check if spin system is axially symmetric about z."""
+    g = np.atleast_1d(sys.g).flatten()
+    if len(g) >= 2 and abs(g[0] - g[1]) > 1e-4:
+        return False
+    D = np.atleast_1d(sys.D).flatten()
+    if len(D) >= 2 and abs(D[1]) > 1e-4:
+        return False
+    for nuc in sys.nuclei:
+        A = np.diag(nuc.A_eff) if nuc.A_eff is not None else [0, 0, 0]
+        if abs(A[0] - A[1]) > 1e-4:
+            return False
+    return True
+
+
+# ---------------------------------------------------------------------------
 # Powder orientation grid
 # ---------------------------------------------------------------------------
 
-def _make_powder_grid(n_theta: int = 20, n_phi: int = 40) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+def _make_powder_grid(n_theta: int = 20, n_phi: int = 40, axial: bool = False) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Generate a spherical grid of (theta, phi) orientations with sin(theta) weights.
-    Uses a simple uniform grid; for production use a Lebedev grid instead.
-
-    Returns
-    -------
-    thetas : (n_theta,) array of polar angles [0, pi/2] (upper hemisphere only)
-    phis   : (n_phi,) array of azimuthal angles [0, 2*pi)
-    weights: (n_theta, n_phi) weight matrix normalized to sum to 1
+    Generate an orientation grid with solid-angle weights.
+    For axial systems, phi is sampled with 1 point.
+    For rhombic/general systems, phi is sampled over the irreducible octant [0, pi/2].
     """
     thetas = np.linspace(0, np.pi / 2, n_theta, endpoint=False) + np.pi / (4 * n_theta)
-    phis = np.linspace(0, 2 * np.pi, n_phi, endpoint=False)
+    if axial:
+        phis = np.array([0.0])
+    else:
+        k_phi = max(4, n_phi // 4)
+        phis = np.linspace(0, np.pi / 2, k_phi, endpoint=False) + np.pi / (4 * k_phi)
 
-    # Weight = sin(theta) * dtheta * dphi (solid angle element)
     sin_weights = np.sin(thetas)
-    weights = np.outer(sin_weights, np.ones(n_phi))
+    weights = np.outer(sin_weights, np.ones(len(phis)))
     weights /= weights.sum()
 
     return thetas, phis, weights
@@ -85,30 +99,38 @@ def _find_resonance_fields(
     B_dir: np.ndarray,
     mw_freq_MHz: float,
     B_vals: np.ndarray,
-    H0: object,
-    mux: object,
-    muy: object,
-    muz: object,
-) -> np.ndarray:
+    H0_arr: np.ndarray,
+    mux_arr: np.ndarray,
+    muy_arr: np.ndarray,
+    muz_arr: np.ndarray,
+    temperature: Optional[float] = None,
+    cancel_check: Optional[Any] = None,
+) -> Tuple[np.ndarray, np.ndarray]:
     """
     For a given orientation B_dir, find the resonance fields where any energy
     gap equals h*nu (mw_freq_MHz) using linear interpolation of eigenvalue
     differences across the B sweep.
-
-    Returns array of resonance fields in mT (may be empty).
+    If temperature (K) is given, transition weights are scaled by the thermal
+    Boltzmann population difference.
     """
     n_pts = len(B_vals)
     n_states = sys.hsdim()
 
+    mu_B = B_dir[0] * mux_arr + B_dir[1] * muy_arr + B_dir[2] * muz_arr
+
     # Compute eigenvalues at each field point
     E = np.zeros((n_states, n_pts))
     for i, B_mag in enumerate(B_vals):
-        B_vec = B_mag * B_dir
-        H = H0 - B_vec[0] * mux - B_vec[1] * muy - B_vec[2] * muz
-        E[:, i] = scipy.linalg.eigvalsh(H.toarray())
+        if cancel_check and cancel_check():
+            raise InterruptedError("Simulation cancelled")
+        H = H0_arr - B_mag * mu_B
+        E[:, i] = scipy.linalg.eigvalsh(H)
+
+    beta = (4.799243e-5 / temperature) if (temperature is not None and temperature > 0) else None
 
     # Find all pairs of levels and look for crossings at E_j - E_i = mw_freq_MHz
     res_fields = []
+    res_weights = []
     for i in range(n_states):
         for j in range(i + 1, n_states):
             gap = E[j] - E[i]  # energy gap in MHz
@@ -121,9 +143,21 @@ def _find_resonance_fields(
                 d0, d1 = diff[k], diff[k + 1]
                 B0, B1 = B_vals[k], B_vals[k + 1]
                 B_res = B0 + (B1 - B0) * (-d0) / (d1 - d0)
-                res_fields.append(B_res)
 
-    return np.array(res_fields)
+                weight = 1.0
+                if beta is not None:
+                    alpha = (B_res - B0) / (B1 - B0) if (B1 != B0) else 0.0
+                    E_res = E[:, k] + alpha * (E[:, k + 1] - E[:, k])
+                    E_rel = E_res - np.min(E_res)
+                    boltz = np.exp(-beta * E_rel)
+                    Z = np.sum(boltz)
+                    pop_diff = (boltz[i] - boltz[j]) / Z if Z > 0 else 1.0
+                    weight = max(1e-12, float(pop_diff))
+
+                res_fields.append(B_res)
+                res_weights.append(weight)
+
+    return np.array(res_fields), np.array(res_weights)
 
 
 # ---------------------------------------------------------------------------
@@ -287,7 +321,7 @@ def pepper(
     B_range = np.asarray(exp.get('Range', [280.0, 420.0]), dtype=float)
     n_points = int(exp.get('nPoints', 1024))
     harmonic = int(exp.get('Harmonic', 1))
-    n_theta = int(opt.get('nKnots', 20))
+    n_theta = int(opt.get('GridSize', opt.get('nKnots', 20)))
     n_phi = int(opt.get('nPhi', 40))
     n_B = int(opt.get('nB', 150))
 
@@ -307,6 +341,12 @@ def pepper(
     # Precompute field-independent operators if doing matrix diagonalization
     if not use_perturb2:
         H0, mux, muy, muz = ham(sys)
+        H0_arr = H0.toarray() if hasattr(H0, "toarray") else np.asarray(H0)
+        mux_arr = mux.toarray() if hasattr(mux, "toarray") else np.asarray(mux)
+        muy_arr = muy.toarray() if hasattr(muy, "toarray") else np.asarray(muy)
+        muz_arr = muz.toarray() if hasattr(muz, "toarray") else np.asarray(muz)
+    else:
+        H0_arr = mux_arr = muy_arr = muz_arr = None
 
     # Check for single orientation mode
     single_ori = bool(exp.get('singleOrientation', opt.get('singleOrientation', False)))
@@ -316,6 +356,17 @@ def pepper(
     all_B_res = []
     all_weights = []
 
+    cancel_check = opt.get('cancel_check')
+
+    temperature = exp.get('Temperature', exp.get('temperature', None))
+    if temperature is not None:
+        try:
+            temperature = float(temperature)
+            if temperature <= 0:
+                temperature = None
+        except (ValueError, TypeError):
+            temperature = None
+
     if single_ori and ori_angles is not None and len(ori_angles) >= 2:
         # Single crystal / orientation calculation
         theta_rad = np.radians(float(ori_angles[0]))
@@ -324,34 +375,45 @@ def pepper(
 
         if use_perturb2:
             B_res = _resonance_fields_perturb2_orientation(sys, B_dir, mw_freq_MHz)
+            B_weights = np.ones(len(B_res))
         else:
-            B_res = _find_resonance_fields(
+            B_res, B_weights = _find_resonance_fields(
                 sys, B_dir, mw_freq_MHz, B_internal,
-                H0, mux, muy, muz
+                H0_arr, mux_arr, muy_arr, muz_arr,
+                temperature=temperature,
+                cancel_check=cancel_check
             )
-        for B0 in B_res:
+        for B0, bw in zip(B_res, B_weights):
             all_B_res.append(B0)
-            all_weights.append(1.0)
+            all_weights.append(bw)
     else:
         # Powder orientation grid
-        thetas, phis, grid_weights = _make_powder_grid(n_theta, n_phi)
+        axial = _is_axial_system(sys)
+        thetas, phis, grid_weights = _make_powder_grid(n_theta, n_phi, axial=axial)
 
         for i_theta, theta in enumerate(thetas):
+            if cancel_check and cancel_check():
+                raise InterruptedError("Simulation cancelled")
             for i_phi, phi in enumerate(phis):
+                if cancel_check and cancel_check():
+                    raise InterruptedError("Simulation cancelled")
                 B_dir = _B_direction(theta, phi)
                 w = grid_weights[i_theta, i_phi]
 
                 if use_perturb2:
                     B_res = _resonance_fields_perturb2_orientation(sys, B_dir, mw_freq_MHz)
+                    B_weights = np.ones(len(B_res))
                 else:
-                    B_res = _find_resonance_fields(
+                    B_res, B_weights = _find_resonance_fields(
                         sys, B_dir, mw_freq_MHz, B_internal,
-                        H0, mux, muy, muz
+                        H0_arr, mux_arr, muy_arr, muz_arr,
+                        temperature=temperature,
+                        cancel_check=cancel_check
                     )
 
-                for B0 in B_res:
+                for B0, bw in zip(B_res, B_weights):
                     all_B_res.append(B0)
-                    all_weights.append(w)
+                    all_weights.append(w * bw)
 
     return_both = bool(opt.get('return_both', exp.get('return_both', False)))
 

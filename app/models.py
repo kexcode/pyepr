@@ -62,6 +62,8 @@ class ExperimentParams(BaseModel):
     method: str = Field("matrix", description="Simulation model: 'matrix' or 'perturb2'")
     # pepper-specific
     nKnots: int = Field(20, description="Powder averaging knots (pepper only)")
+    gridSize: Optional[int] = Field(None, description="Grid size / powder averaging knots (Opt.GridSize)")
+    Temperature: Optional[float] = Field(None, description="Sample temperature in Kelvin (Exp.Temperature)")
     singleOrientation: bool = Field(False, description="Whether to simulate single orientation instead of powder")
     orientation: List[float] = Field([0.0, 0.0], description="Orientation angles [theta, phi] in degrees")
 

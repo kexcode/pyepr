@@ -306,6 +306,10 @@ def garlic(
     spc_abs = np.zeros(n_points)
     spc_deriv = np.zeros(n_points)
 
+    cancel_check = opt.get('cancel_check')
+    if cancel_check and cancel_check():
+        raise InterruptedError("Simulation cancelled")
+
     # Compute resonance fields according to chosen model
     if method in ('perturb1', 'first_order', 'first'):
         B_res, intensities = _resonance_fields_perturbation(sys, mw_freq, order=1)
@@ -314,8 +318,13 @@ def garlic(
     else:  # 'matrix' / exact
         B_res, intensities = _resonance_fields_matrix(sys, mw_freq, (B_range[0], B_range[1]))
 
+    if cancel_check and cancel_check():
+        raise InterruptedError("Simulation cancelled")
+
     # Accumulate lineshapes simultaneously
     for B0, weight in zip(B_res, intensities):
+        if cancel_check and cancel_check():
+            raise InterruptedError("Simulation cancelled")
         if B0 < B_range[0] or B0 > B_range[1]:
             continue  # skip lines outside the window
 

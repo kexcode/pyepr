@@ -259,6 +259,7 @@ input[type=number], input[type=text], select {
 }
 input[type=number]::-webkit-outer-spin-button,
 input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
+#f-mwFreq::-webkit-calendar-picker-indicator { display: none !important; }
 input[type=number]:focus, input[type=text]:focus, select:focus {
   border-color: var(--primary);
 }
@@ -609,6 +610,16 @@ input:checked + .slider:before {
 #simulate-btn:active { transform: translateY(0); }
 #simulate-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 #simulate-btn .material-icons-round { font-size: 20px; }
+
+/* Break / Stop mode when busy */
+#simulate-btn.break-mode {
+  background: linear-gradient(135deg, #C62828, #E53935);
+  box-shadow: 0 4px 20px rgba(229, 57, 53, 0.45);
+}
+#simulate-btn.break-mode:hover {
+  background: linear-gradient(135deg, #B71C1C, #D32F2F);
+  box-shadow: 0 6px 28px rgba(229, 57, 53, 0.6);
+}
 
 /* Spinning loader */
 .spin { animation: spin 0.8s linear infinite; }

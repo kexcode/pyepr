@@ -223,9 +223,22 @@ def validate(simulator: str):
 
 # --- Simulation ---
 
+import threading
+
+_simulation_cancel_event = threading.Event()
+
+
+@app.post("/api/simulate/cancel", tags=["Simulation"])
+def cancel_simulation():
+    """Cancel any active simulation calculation immediately."""
+    _simulation_cancel_event.set()
+    return {"status": "cancelled"}
+
+
 @app.post("/api/simulate/spectrum", response_model=SpectrumResponse, tags=["Simulation"])
 def simulate_spectrum(params: ExperimentParams):
     """Run garlic() or pepper() and return the spectrum."""
+    _simulation_cancel_event.clear()
     sys = get_spin_system()
     exp = {
         "mwFreq": params.mwFreq,
@@ -235,13 +248,17 @@ def simulate_spectrum(params: ExperimentParams):
         "method": params.method,
         "singleOrientation": params.singleOrientation,
         "orientation": params.orientation,
+        "Temperature": params.Temperature,
     }
+    knots = params.gridSize if params.gridSize is not None else params.nKnots
     opt = {
-        "nKnots": params.nKnots,
+        "nKnots": knots,
+        "GridSize": knots,
         "method": params.method,
         "singleOrientation": params.singleOrientation,
         "orientation": params.orientation,
         "return_both": True,
+        "cancel_check": lambda: _simulation_cancel_event.is_set(),
     }
 
     # Run validation first (collect messages without stopping)
@@ -262,6 +279,8 @@ def simulate_spectrum(params: ExperimentParams):
             else:
                 B, spc_abs, spc_deriv = pepper(sys, exp, opt)
             spc = spc_deriv if params.Harmonic != 0 else spc_abs
+    except InterruptedError:
+        raise HTTPException(status_code=499, detail="Simulation cancelled by user")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
