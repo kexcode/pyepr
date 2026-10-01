@@ -8,12 +8,12 @@
   <title>EPR Simulator</title>
   <link rel="manifest" href="/static/manifest.json"/>
   <link rel="apple-touch-icon" href="/static/icons/icon-192.png"/>
-  <link rel="stylesheet" href="/static/style.css?v=2"/>
+  <link rel="stylesheet" href="/static/style.css?v=4"/>
   <!-- Plotly.js -->
   <script src="https://cdn.plot.ly/plotly-2.32.0.min.js" defer></script>
-  <!-- Shepherd.js tour -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/shepherd.js@11/dist/css/shepherd.css"/>
-  <script src="https://cdn.jsdelivr.net/npm/shepherd.js@11/dist/js/shepherd.min.js" defer></script>
+  <!-- Shepherd.js tour (bundled locally for instant offline reliability) -->
+  <link rel="stylesheet" href="/static/shepherd.css?v=4"/>
+  <script src="/static/shepherd.min.js?v=4" defer></script>
 </head>
 <body>
 
@@ -591,7 +591,7 @@
   <span class="material-icons-round">play_arrow</span>
 </button>
 
-<script src="/static/app.js?v=2" defer></script>
-<script src="/static/tour.js" defer></script>
+<script src="/static/app.js?v=4" defer></script>
+<script src="/static/tour.js?v=4" defer></script>
 </body>
 </html>

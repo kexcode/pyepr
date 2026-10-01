@@ -1,0 +1,186 @@
+.shepherd-button {
+  background: #0e639c;
+  border: 1px solid #1177bb;
+  border-radius: 4px;
+  color: #ffffff;
+  cursor: pointer;
+  margin-right: .5rem;
+  padding: .45rem 1.1rem;
+  font-size: 0.82rem;
+  font-weight: 500;
+  transition: all .2s ease;
+}
+.shepherd-button:not(:disabled):hover {
+  background: #1177bb;
+  color: #ffffff;
+}
+.shepherd-button.shepherd-button-secondary {
+  background: #3a3d41;
+  color: #cccccc;
+  border: 1px solid #454545;
+}
+.shepherd-button.shepherd-button-secondary:not(:disabled):hover {
+  background: #45494e;
+  color: #ffffff;
+}
+.shepherd-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.shepherd-footer {
+  border-bottom-left-radius: 8px;
+  border-bottom-right-radius: 8px;
+  display: flex;
+  justify-content: flex-end;
+  padding: .75rem 1rem;
+  background: #222222;
+  border-top: 1px solid #333333;
+}
+.shepherd-footer .shepherd-button:last-child {
+  margin-right: 0;
+}
+.shepherd-cancel-icon {
+  background: transparent;
+  border: none;
+  color: #858585;
+  cursor: pointer;
+  font-size: 1.4em;
+  font-weight: 400;
+  margin: 0;
+  padding: 0;
+  transition: color .2s ease;
+}
+.shepherd-cancel-icon:hover {
+  color: #cccccc;
+}
+.shepherd-has-title .shepherd-content .shepherd-cancel-icon {
+  color: #858585;
+}
+.shepherd-has-title .shepherd-content .shepherd-cancel-icon:hover {
+  color: #cccccc;
+}
+.shepherd-title {
+  color: #e0e0e0;
+  display: flex;
+  flex: 1 0 auto;
+  font-size: 0.94rem;
+  font-weight: 600;
+  margin: 0;
+  padding: 0;
+}
+.shepherd-header {
+  align-items: center;
+  border-top-left-radius: 8px;
+  border-top-right-radius: 8px;
+  display: flex;
+  justify-content: flex-end;
+  line-height: 1.5em;
+  padding: .75rem 1rem;
+  background: #2d2d30;
+  border-bottom: 1px solid #3c3c3c;
+}
+.shepherd-has-title .shepherd-content .shepherd-header {
+  background: #2d2d30;
+  padding: .75rem 1rem;
+  border-bottom: 1px solid #3c3c3c;
+}
+.shepherd-text {
+  color: #cccccc;
+  font-size: 0.83rem;
+  line-height: 1.55em;
+  padding: 1rem 1.1rem;
+  background: #252526;
+}
+.shepherd-text p {
+  margin-top: 0;
+}
+.shepherd-text p:last-child {
+  margin-bottom: 0;
+}
+.shepherd-content {
+  border-radius: 8px;
+  outline: none;
+  padding: 0;
+  background: #252526;
+  overflow: hidden;
+}
+.shepherd-element {
+  background: #252526;
+  border: 1px solid #3c3c3c;
+  border-radius: 8px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.65);
+  max-width: 480px;
+  opacity: 0;
+  outline: none;
+  transition: opacity .3s, visibility .3s;
+  visibility: hidden;
+  width: 100%;
+  z-index: 99999;
+}
+.shepherd-enabled.shepherd-element {
+  opacity: 1;
+  visibility: visible;
+}
+.shepherd-element[data-popper-reference-hidden]:not(.shepherd-centered) {
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+}
+.shepherd-element, .shepherd-element *, .shepherd-element :after, .shepherd-element :before {
+  box-sizing: border-box;
+}
+.shepherd-arrow, .shepherd-arrow:before {
+  height: 16px;
+  position: absolute;
+  width: 16px;
+  z-index: -1;
+}
+.shepherd-arrow:before {
+  background: #2d2d30;
+  content: "";
+  transform: rotate(45deg);
+  border: 1px solid #3c3c3c;
+}
+.shepherd-element[data-popper-placement^=top]>.shepherd-arrow {
+  bottom: -8px;
+}
+.shepherd-element[data-popper-placement^=bottom]>.shepherd-arrow {
+  top: -8px;
+}
+.shepherd-element[data-popper-placement^=left]>.shepherd-arrow {
+  right: -8px;
+}
+.shepherd-element[data-popper-placement^=right]>.shepherd-arrow {
+  left: -8px;
+}
+.shepherd-element.shepherd-centered>.shepherd-arrow {
+  opacity: 0;
+}
+.shepherd-element.shepherd-has-title[data-popper-placement^=bottom]>.shepherd-arrow:before {
+  background-color: #2d2d30;
+}
+.shepherd-target-click-disabled.shepherd-enabled.shepherd-target,
+.shepherd-target-click-disabled.shepherd-enabled.shepherd-target * {
+  pointer-events: none;
+}
+.shepherd-modal-overlay-container {
+  height: 0;
+  left: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+  position: fixed;
+  top: 0;
+  transition: all .3s ease-out, height 0ms .3s, opacity .3s 0ms;
+  width: 100vw;
+  z-index: 9997;
+}
+.shepherd-modal-overlay-container.shepherd-modal-is-visible {
+  height: 100vh;
+  opacity: .55;
+  transform: translateZ(0);
+  transition: all .3s ease-out, height 0s 0s, opacity .3s 0s;
+}
+.shepherd-modal-overlay-container.shepherd-modal-is-visible path {
+  pointer-events: all;
+}

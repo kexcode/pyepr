@@ -1234,7 +1234,7 @@ async function loadPreset(idx) {
     showToast(p.name + ' loaded successfully!', 'success');
     
     // Automatically simulate loaded preset
-    runSimulation();
+    return await runSimulation();
   } catch (e) {
     showToast('Failed to load preset: ' + e.message, 'error');
   }
