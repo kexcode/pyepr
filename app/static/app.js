@@ -1062,7 +1062,7 @@ const PRESETS = [
     badge: 'R–N:',
     desc: 'High-field 94 GHz · Large axial ZFS',
     color: '#FF6E40',
-    params: { S: 1.0, g: [2.0033, 2.0033, 2.0033], D: [41041.59, 2788.07], nuclei: [], lw: [30, 0.0], simulator: "pepper", method: "matrix", gridSize: 17, exp: { mwFreq: 94.0, Bmin: 0, Bmax: 6000, nPoints: 5001, temperature: null } }
+    params: { S: 1.0, g: [2.0033, 2.0033, 2.0033], D: [41041.59, 2788.07], nuclei: [], lw: [30, 0.0], simulator: "pepper", method: "matrix", gridSize: 193, exp: { mwFreq: 94.0, Bmin: 0, Bmax: 6000, nPoints: 5001, temperature: null } }
   },
   {
     name: 'Triplet carbene',
@@ -1070,7 +1070,7 @@ const PRESETS = [
     badge: 'R₂C:',
     desc: 'Divalent carbene · Rhombic ZFS',
     color: '#E040FB',
-    params: { S: 1.0, g: [2.0033, 2.0033, 2.0033], D: [12258.51, 2788.07], nuclei: [], lw: [10, 0.0], simulator: "pepper", method: "matrix", gridSize: 17, exp: { mwFreq: 9.4, Bmin: 0, Bmax: 1400, nPoints: 5001, temperature: null } }
+    params: { S: 1.0, g: [2.0033, 2.0033, 2.0033], D: [12258.51, 2788.07], nuclei: [], lw: [10, 0.0], simulator: "pepper", method: "matrix", gridSize: 193, exp: { mwFreq: 9.4, Bmin: 0, Bmax: 1400, nPoints: 5001, temperature: null } }
   },
   {
     name: 'Mn(III) ion',
@@ -1078,7 +1078,7 @@ const PRESETS = [
     badge: 'Mn³⁺',
     desc: 'High-spin d⁴ (S = 2) · Negative ZFS',
     color: '#FFAB00',
-    params: { S: 2.0, g: [2.0000, 2.0000, 2.0000], D: [-119317.40, 0], nuclei: [], lw: [80, 0.0], simulator: "pepper", method: "matrix", gridSize: 201, exp: { mwFreq: 240.0, Bmin: 0, Bmax: 12000, nPoints: 2501, temperature: 5 } }
+    params: { S: 2.0, g: [2.0000, 2.0000, 2.0000], D: [-119317.40, 0], nuclei: [], lw: [80, 0.0], simulator: "pepper", method: "matrix", gridSize: 193, exp: { mwFreq: 240.0, Bmin: 0, Bmax: 12000, nPoints: 2501, temperature: 5 } }
   },
   {
     name: 'Fe(III) ion',
@@ -1086,7 +1086,7 @@ const PRESETS = [
     badge: 'Fe³⁺',
     desc: 'High-spin d⁵ (S = 5/2) · Huge ZFS',
     color: '#FF5252',
-    params: { S: 2.5, g: [2.0000, 2.0000, 2.0000], D: [149896.23, 0], nuclei: [], lw: [20, 0.0], simulator: "pepper", method: "matrix", gridSize: 30, exp: { mwFreq: 9.4, Bmin: 0, Bmax: 400, nPoints: 2501, temperature: 5 } }
+    params: { S: 2.5, g: [2.0000, 2.0000, 2.0000], D: [149896.23, 0], nuclei: [], lw: [20, 0.0], simulator: "pepper", method: "matrix", gridSize: 193, exp: { mwFreq: 9.4, Bmin: 0, Bmax: 400, nPoints: 2501, temperature: 5 } }
   }
 ];
 
@@ -1231,12 +1231,39 @@ async function loadPreset(idx) {
     await refreshSystem();
     const tabParams = document.getElementById('tab-params');
     if (tabParams) tabParams.click();
-    showToast(p.name + ' loaded successfully!', 'success');
     
-    // Automatically simulate loaded preset
+    // Check if preset has cached spectrum & levels for instant display
+    const cached = await getCachedPreset(idx);
+    if (cached && cached.spectrum && cached.levels) {
+      renderSpectrum(cached.spectrum);
+      renderLevels(cached.levels);
+      renderValidation(cached.spectrum.validation ? cached.spectrum.validation.messages : []);
+      updateSpectrumBadge(cached.spectrum);
+      showToast(p.name + ' loaded (cached)!', 'success');
+      return;
+    }
+
+    showToast(p.name + ' loaded successfully!', 'success');
+    // Fallback: simulate if no cache available
     return await runSimulation();
   } catch (e) {
     showToast('Failed to load preset: ' + e.message, 'error');
   }
+}
+
+let _presetCache = null;
+
+async function getCachedPreset(idx) {
+  if (!_presetCache) {
+    try {
+      const res = await fetch('/static/preset_cache.json?v=1');
+      if (res.ok) {
+        _presetCache = await res.json();
+      }
+    } catch (e) {
+      console.warn('Could not load preset cache:', e);
+    }
+  }
+  return _presetCache ? _presetCache[String(idx)] : null;
 }
 

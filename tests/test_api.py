@@ -253,4 +253,35 @@ def test_garlic_dual_harmonic_simulation():
     assert np.max(np.abs(data["spc_deriv"])) > 0
 
 
+def test_preset_cache_content():
+    import json
+    import os
+
+    cache_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "app", "static", "preset_cache.json")
+    assert os.path.exists(cache_path), "preset_cache.json must exist"
+
+    with open(cache_path, "r", encoding="utf-8") as f:
+        cache = json.load(f)
+
+    assert len(cache) == 10
+    for idx in range(10):
+        key = str(idx)
+        assert key in cache, f"Preset {idx} missing from cache"
+        item = cache[key]
+        assert "spectrum" in item and "levels" in item
+        assert len(item["spectrum"]["B"]) > 0
+        assert len(item["levels"]["B"]) > 0
+        assert len(item["levels"]["E"]) > 0
+
+    # Ensure last 4 presets have gridSize 193
+    for idx in [6, 7, 8, 9]:
+        assert cache[str(idx)]["gridSize"] == 193, f"Preset {idx} should have gridSize 193"
+
+    # Verify static route serves the file
+    resp = client.get("/static/preset_cache.json")
+    assert resp.status_code == 200
+    assert "application/json" in resp.headers.get("content-type", "")
+
+
+
 
